@@ -1,6 +1,6 @@
 """
 modules/identity/voice.py — TTS 语音输出模块
-支持 edge-tts（免费）/ openai / elevenlabs
+支持 edge-tts（免费）/ openai
 """
 import asyncio
 import subprocess
@@ -31,7 +31,7 @@ def speak(text: str, config: dict):
 
 
 def _speak_edge(text: str, cfg: dict):
-    """使用 edge-tts（免费，微软云，需联网）。"""
+    """使用 edge-tts 生成 mp3，用 Windows Media Player 播放。"""
     try:
         import edge_tts
         voice = cfg.get("edge_voice", "zh-CN-XiaoxiaoNeural")
@@ -44,14 +44,8 @@ def _speak_edge(text: str, cfg: dict):
             mp3_path = tmp.name
             tmp.close()
             await communicate.save(mp3_path)
-
-            # mp3 → wav（用 Python 标准库，不需要 ffmpeg）
-            wav_path = mp3_path.replace(".mp3", ".wav")
-            _mp3_to_wav(mp3_path, wav_path)
+            _play_mp3(mp3_path)
             Path(mp3_path).unlink(missing_ok=True)
-
-            _play_audio(wav_path)
-            Path(wav_path).unlink(missing_ok=True)
 
         asyncio.run(_run())
     except ImportError:
@@ -62,16 +56,35 @@ def _speak_edge(text: str, cfg: dict):
         print(f"[Voice] {text}")
 
 
-def _mp3_to_wav(mp3_path: str, wav_path: str):
-    """mp3 转 wav，用 pydub（需要 pip install pydub）或 soundfile 兜底。"""
+def _play_mp3(path: str):
+    """用 Windows Media Player COM 对象播放 mp3（同步等待播完）。"""
+    import platform
+    system = platform.system()
     try:
-        from pydub import AudioSegment
-        AudioSegment.from_mp3(mp3_path).export(wav_path, format="wav")
-    except ImportError:
-        # pydub 没装，用 subprocess 调 Windows 内置的 mfplay / powershell
-        # 实际上直接重命名骗过 SoundPlayer（不标准但很多 mp3 能播）
-        import shutil
-        shutil.copy(mp3_path, wav_path)
+        if system == "Windows":
+            # WMP COM 对象，播完自动退出
+            ps_script = (
+                f'$wmp = New-Object -ComObject WMPlayer.OCX; '
+                f'$wmp.settings.volume = 100; '
+                f'$wmp.URL = "{path}"; '
+                f'$wmp.controls.play(); '
+                f'Start-Sleep -Milliseconds 500; '
+                f'while ($wmp.playState -ne 1) {{ Start-Sleep -Milliseconds 200 }}; '
+                f'$wmp.close()'
+            )
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-c", ps_script],
+                capture_output=True, timeout=30
+            )
+            if result.returncode != 0:
+                err = result.stderr.decode(errors="ignore")
+                print(f"[Voice] WMP error: {err[:100]}")
+        elif system == "Darwin":
+            subprocess.run(["afplay", path], check=True)
+        else:
+            subprocess.run(["mpg123", "-q", path], check=True)
+    except Exception as e:
+        print(f"[Voice] Playback error: {e}")
 
 
 def _speak_openai(text: str, cfg: dict, full_config: dict):
@@ -85,29 +98,10 @@ def _speak_openai(text: str, cfg: dict, full_config: dict):
             tmp_path = f.name
         resp = client.audio.speech.create(model="tts-1", voice="nova", input=text)
         resp.stream_to_file(tmp_path)
-        _play_audio(tmp_path)
+        _play_mp3(tmp_path)
         Path(tmp_path).unlink(missing_ok=True)
     except Exception as e:
         print(f"[Voice] OpenAI TTS failed: {e}")
-
-
-def _play_audio(path: str):
-    """播放音频文件（Windows 用 SoundPlayer，仅支持 wav）。"""
-    import platform
-    system = platform.system()
-    try:
-        if system == "Windows":
-            subprocess.run(
-                ["powershell", "-c",
-                 f'(New-Object Media.SoundPlayer "{path}").PlaySync()'],
-                check=True, capture_output=True
-            )
-        elif system == "Darwin":
-            subprocess.run(["afplay", path], check=True)
-        else:
-            subprocess.run(["aplay", path], check=True)
-    except Exception as e:
-        print(f"[Voice] Playback error: {e}")
 
 
 # 供 dispatcher 加载的接口
