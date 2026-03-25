@@ -12,17 +12,17 @@ perception:
 
 # ── 意图层（LLM）────────────────────────────────────────────
 intent:
-  provider: "openai"           # openai / local（两家都兼容 OpenAI 格式）
+  provider: "openai"           # 兼容 OpenAI 格式
 
-  # 意图解析：DeepSeek V3（便宜，中文强）
-  model: "deepseek-chat"
+  # 意图解析：GLM-4-Flash（免费）
+  model: "glm-4-flash"
   api_key: ""                  # 留空则读环境变量 ARIA_INTENT_KEY
-  base_url: "https://api.deepseek.com/v1"
+  base_url: "https://open.bigmodel.cn/api/paas/v4"
 
-  # 视觉分析：GLM-4V-Flash（免费额度，有视觉）
-  vision_model: "glm-4v-flash"
+  # 视觉分析：Gemini 2.0 Flash（免费，效果强）
+  vision_model: "gemini-2.0-flash"
   vision_api_key: ""           # 留空则读环境变量 ARIA_VISION_KEY
-  vision_base_url: "https://open.bigmodel.cn/api/paas/v4"
+  vision_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 # ── Action 模块 ──────────────────────────────────────────────
 actions:
