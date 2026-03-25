@@ -78,7 +78,7 @@ def _parse_openai(transcript: str, config: dict, persona_prompt: str) -> dict:
     try:
         from openai import OpenAI
         cfg = config.get("intent", {})
-        api_key = cfg.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
+        api_key = cfg.get("api_key") or os.environ.get("ARIA_INTENT_KEY", "")
         base_url = cfg.get("base_url")  # 可选，用于代理/兼容 API
         
         kwargs = {"api_key": api_key}
@@ -151,14 +151,19 @@ def _keyword_fallback(transcript: str) -> dict:
 
 def answer_with_screenshot(question: str, screenshot_path: str, config: dict) -> str:
     """
-    用 GPT-4o Vision 分析截图并回答问题。
+    用视觉模型分析截图并回答问题。
+    视觉模型配置独立（vision_model / vision_api_key / vision_base_url）
     """
     try:
         import base64
         from openai import OpenAI
         cfg = config.get("intent", {})
-        api_key = cfg.get("api_key") or os.environ.get("OPENAI_API_KEY", "")
-        base_url = cfg.get("base_url")
+
+        # 视觉模型用独立的 key 和 base_url
+        api_key = cfg.get("vision_api_key") or os.environ.get("ARIA_VISION_KEY", "")
+        base_url = cfg.get("vision_base_url") or cfg.get("base_url")
+        model = cfg.get("vision_model", "glm-4v-flash")
+
         kwargs = {"api_key": api_key}
         if base_url:
             kwargs["base_url"] = base_url
@@ -168,13 +173,12 @@ def answer_with_screenshot(question: str, screenshot_path: str, config: dict) ->
             img_b64 = base64.b64encode(f.read()).decode()
 
         resp = client.chat.completions.create(
-            model=cfg.get("vision_model", "gpt-4o"),
+            model=model,
             messages=[{
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {
                         "url": f"data:image/png;base64,{img_b64}",
-                        "detail": "low",  # 省 token
                     }},
                     {"type": "text", "text": question},
                 ],
