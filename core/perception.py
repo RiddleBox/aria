@@ -100,18 +100,81 @@ class Perception:
         try:
             import mss
             import mss.tools
+            import cv2
+            import numpy as np
+            
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             out = Path(__file__).parent.parent / "data" / "captures"
             out.mkdir(parents=True, exist_ok=True)
-            path = out / f"screenshot_{ts}.png"
+            
+            # 获取配置参数
+            cfg = self.config.get("screenshot", {})
+            target_width = cfg.get("max_width", 1920)
+            target_height = cfg.get("max_height", 1080)
+            jpeg_quality = cfg.get("jpeg_quality", 80)
+            
             with mss.mss() as sct:
-                img = sct.grab(sct.monitors[1])
-                mss.tools.to_png(img.rgb, img.size, output=str(path))
-            print(f"[Perception] Screenshot: {path.name}")
-            return str(path)
+                # 获取主显示器信息
+                monitor = sct.monitors[1]
+                
+                # 截取屏幕
+                img = sct.grab(monitor)
+                
+                # 转换为numpy数组进行处理
+                img_array = np.array(img)
+                
+                # 分辨率优化：如果屏幕分辨率过高，进行降采样
+                height, width = img_array.shape[:2]
+                new_width, new_height = width, height  # 默认使用原始尺寸
+                if width > target_width or height > target_height:
+                    scale = min(target_width / width, target_height / height)
+                    new_width = int(width * scale)
+                    new_height = int(height * scale)
+                    img_array = cv2.resize(img_array, (new_width, new_height), 
+                                         interpolation=cv2.INTER_AREA)
+                    print(f"[Perception] Screenshot resized: {width}x{height} -> {new_width}x{new_height}")
+                
+                # 保存为JPEG格式（更小的文件大小）
+                path = out / f"screenshot_{ts}.jpg"
+                print(f"[Perception] 准备保存JPEG: {path}")
+                
+                try:
+                    cv2.imwrite(str(path), img_array, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+                    print(f"[Perception] JPEG保存成功")
+                except Exception as e:
+                    print(f"[Perception] JPEG保存失败: {e}")
+                    # 尝试降级到PNG
+                    path = out / f"screenshot_{ts}.png"
+                    cv2.imwrite(str(path), img_array)
+                    print(f"[Perception] 降级到PNG保存")
+                
+                # 计算压缩比
+                original_size = len(img.rgb) if hasattr(img, 'rgb') else width * height * 3
+                compressed_size = path.stat().st_size
+                compression_ratio = original_size / compressed_size if compressed_size > 0 else 1
+                
+                print(f"[Perception] Screenshot: {path.name} ({new_width}x{new_height}, {compressed_size/1024:.1f}KB, {compression_ratio:.1f}x compression)")
+                
+                return str(path)
+                
         except Exception as e:
             print(f"[Perception] Screenshot error: {e}")
-            return None
+            # 降级到原始实现
+            try:
+                import mss
+                import mss.tools
+                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                out = Path(__file__).parent.parent / "data" / "captures"
+                out.mkdir(parents=True, exist_ok=True)
+                path = out / f"screenshot_{ts}.png"
+                with mss.mss() as sct:
+                    img = sct.grab(sct.monitors[1])
+                    mss.tools.to_png(img.rgb, img.size, output=str(path))
+                print(f"[Perception] Fallback screenshot: {path.name}")
+                return str(path)
+            except Exception as fallback_e:
+                print(f"[Perception] Fallback screenshot error: {fallback_e}")
+                return None
 
     # ── 快捷键监听 ────────────────────────────────────────────
 

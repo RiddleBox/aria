@@ -1,0 +1,41 @@
+{
+  "interactions": [
+    {
+      "time": "2026-03-25T15:16:01.720126",
+      "transcript": "給 me now",
+      "action": "chat",
+      "result": "好的，请告诉我你需要什么帮助。"
+    },
+    {
+      "time": "2026-03-25T15:18:47.201918",
+      "transcript": "那我说话吗",
+      "action": "chat",
+      "result": "是的，你可以说话。"
+    },
+    {
+      "time": "2026-03-25T15:18:51.950185",
+      "transcript": "听到我说话吗,ok",
+      "action": "chat",
+      "result": "是的，我在这里，怎么了？"
+    },
+    {
+      "time": "2026-03-25T15:20:27.856715",
+      "transcript": "在里面的正常听到我说话了吧",
+      "action": "chat",
+      "result": "是的，我在这里听着呢。"
+    },
+    {
+      "time": "2026-03-25T15:21:09.528038",
+      "transcript": "使别现在是正常的吗",
+      "action": "chat",
+      "result": "是的，我现在正常工作。"
+    },
+    {
+      "time": "2026-03-25T15:27:22.232101",
+      "transcript": "能回憶我的事嗎",
+      "action": "chat",
+      "result": "当然可以，告诉我你需要回忆什么？"
+    }
+  ],
+  "facts": {}
+}

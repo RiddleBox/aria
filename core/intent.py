@@ -157,6 +157,10 @@ def answer_with_screenshot(question: str, screenshot_path: str, config: dict) ->
     try:
         import base64
         from openai import OpenAI
+        import cv2
+        import numpy as np
+        from io import BytesIO
+        
         cfg = config.get("intent", {})
 
         # 视觉模型用独立的 key 和 base_url
@@ -169,8 +173,35 @@ def answer_with_screenshot(question: str, screenshot_path: str, config: dict) ->
             kwargs["base_url"] = base_url
         client = OpenAI(**kwargs)
 
-        with open(screenshot_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode()
+        # 图像预处理：读取并优化图像
+        img = cv2.imread(screenshot_path)
+        if img is not None:
+            # 获取配置参数
+            vision_cfg = cfg.get("vision_optimization", {})
+            max_width = vision_cfg.get("max_width", 1280)
+            max_height = vision_cfg.get("max_height", 720)
+            jpeg_quality = vision_cfg.get("jpeg_quality", 75)
+            
+            # 分辨率优化
+            height, width = img.shape[:2]
+            if width > max_width or height > max_height:
+                scale = min(max_width / width, max_height / height)
+                new_width = int(width * scale)
+                new_height = int(height * scale)
+                img = cv2.resize(img, (new_width, new_height), 
+                               interpolation=cv2.INTER_AREA)
+                print(f"[Intent] Vision image resized: {width}x{height} -> {new_width}x{new_height}")
+            
+            # 转换为JPEG格式并压缩
+            _, buffer = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+            img_bytes = buffer.tobytes()
+            img_b64 = base64.b64encode(img_bytes).decode()
+            
+            print(f"[Intent] Vision image optimized: {len(img_bytes)/1024:.1f}KB")
+        else:
+            # 降级处理：直接读取原文件
+            with open(screenshot_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode()
 
         resp = client.chat.completions.create(
             model=model,
@@ -178,7 +209,7 @@ def answer_with_screenshot(question: str, screenshot_path: str, config: dict) ->
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {
-                        "url": f"data:image/png;base64,{img_b64}",
+                        "url": f"data:image/jpeg;base64,{img_b64}",
                     }},
                     {"type": "text", "text": question},
                 ],

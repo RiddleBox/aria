@@ -7,8 +7,18 @@ perception:
                                # 也可以改成 "ctrl+home" 或鼠标侧键如 "mouse4"
   whisper_model: "base"        # tiny(最快) / base / small / medium(最准)
   whisper_language: "zh"       # 中文优先；说英文也能识别
-  mic_device_index: -1         # -1 = 系统默认麦克风
+  mic_device_index: 1         # 1 = 系统默认麦克风
   silence_timeout: 1.5         # 静音超过 N 秒自动停止录音
+  
+  # 截图优化配置
+  screenshot:
+    max_width: 1920           # 最大宽度，超过则自动缩放
+    max_height: 1080          # 最大高度，超过则自动缩放
+    jpeg_quality: 80          # JPEG压缩质量 (0-100)，80在质量和大小间取得平衡
+    # 可选：启用智能区域检测（短期目标）
+    enable_smart_crop: false   # 是否启用智能区域裁剪
+    # 可选：启用差异检测（长期目标）
+    enable_diff_detection: false # 是否只保存变化区域
 
 # ── 意图层（LLM）────────────────────────────────────────────
 intent:
@@ -16,12 +26,12 @@ intent:
 
   # 意图解析：GLM-4-Flash（免费）
   model: "glm-4-flash"
-  api_key: ""                  # 留空则读环境变量 ARIA_INTENT_KEY
+  api_key: "fa9080ee054244adaacdf18d96efe3e9.QmfoPIXxidZPRvd4"                  # 留空则读环境变量 ARIA_INTENT_KEY
   base_url: "https://open.bigmodel.cn/api/paas/v4"
 
   # 视觉分析：Gemini 2.0 Flash（免费，效果强）
   vision_model: "gemini-2.0-flash"
-  vision_api_key: ""           # 留空则读环境变量 ARIA_VISION_KEY
+  vision_api_key: "AIzaSyCXgfrAMBfkvgmMEHZhblYiqKV365YbizI"           # 留空则读环境变量 ARIA_VISION_KEY
   vision_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 # ── Action 模块 ──────────────────────────────────────────────
@@ -29,7 +39,7 @@ actions:
 
   archive:
     enabled: true
-    obsidian_vault: "D:/AIproject/aria-vault"   # 新建的独立 vault
+    obsidian_vault: "i:/AIPROJECT/aria/data/vault"   # 项目目录下的vault
     target_folder: "captures"                   # vault 内的归档文件夹
 
   answer:
