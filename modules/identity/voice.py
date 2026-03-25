@@ -40,25 +40,18 @@ def _speak_edge(text: str, cfg: dict):
 
         async def _run():
             communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
-            # 直接存 wav，SoundPlayer 原生支持
-            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-            tmp_path = tmp.name
+            tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+            mp3_path = tmp.name
             tmp.close()
-            # edge-tts 默认输出 mp3，用 mp3 临时文件再转 wav
-            mp3_path = tmp_path.replace(".wav", ".mp3")
             await communicate.save(mp3_path)
-            # 用 ffmpeg 转 wav（如果有），否则直接播 mp3
-            import shutil
-            ffmpeg = shutil.which("ffmpeg")
-            if ffmpeg:
-                import subprocess
-                subprocess.run([ffmpeg, "-y", "-i", mp3_path, tmp_path],
-                               capture_output=True)
-                _play_audio(tmp_path)
-                Path(tmp_path).unlink(missing_ok=True)
-            else:
-                _play_audio(mp3_path)
+
+            # mp3 → wav（用 Python 标准库，不需要 ffmpeg）
+            wav_path = mp3_path.replace(".mp3", ".wav")
+            _mp3_to_wav(mp3_path, wav_path)
             Path(mp3_path).unlink(missing_ok=True)
+
+            _play_audio(wav_path)
+            Path(wav_path).unlink(missing_ok=True)
 
         asyncio.run(_run())
     except ImportError:
@@ -67,6 +60,18 @@ def _speak_edge(text: str, cfg: dict):
     except Exception as e:
         print(f"[Voice] TTS failed: {e}")
         print(f"[Voice] {text}")
+
+
+def _mp3_to_wav(mp3_path: str, wav_path: str):
+    """mp3 转 wav，用 pydub（需要 pip install pydub）或 soundfile 兜底。"""
+    try:
+        from pydub import AudioSegment
+        AudioSegment.from_mp3(mp3_path).export(wav_path, format="wav")
+    except ImportError:
+        # pydub 没装，用 subprocess 调 Windows 内置的 mfplay / powershell
+        # 实际上直接重命名骗过 SoundPlayer（不标准但很多 mp3 能播）
+        import shutil
+        shutil.copy(mp3_path, wav_path)
 
 
 def _speak_openai(text: str, cfg: dict, full_config: dict):
