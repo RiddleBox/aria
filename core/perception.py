@@ -35,8 +35,8 @@ class Perception:
         segments, _ = model.transcribe(
             audio_path,
             language=lang,
-            beam_size=1,
-            vad_filter=True,
+            beam_size=5,
+            vad_filter=False,
         )
         text = "".join(seg.text for seg in segments).strip()
         print(f"[Perception] Transcribed: {text!r}")
