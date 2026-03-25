@@ -49,6 +49,12 @@ actions:
   capture:
     enabled: false
 
+  # Replay Buffer（Phase 2）
+  replay:
+    enabled: false             # 改为 true 后 main.py 启动时自动开启后台截帧
+    fps: 5                     # 每秒截帧数，5 够用，不卡性能
+    duration_sec: 30           # 保留最近多少秒
+
   convert:
     enabled: false             # Phase 2（视频→GIF，需 ffmpeg + 录屏方案确定后启用）
 

@@ -15,6 +15,16 @@ numpy>=1.24.0
 # 截图
 mss>=9.0.0
 
+# 图像处理（截图压缩 + 视频合成）
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Replay Buffer（录屏，Phase 2）
+# d3dshot 走 DXGI，游戏全屏兼容性好
+# 安装：pip install d3dshot comtypes
+# 注意：d3dshot 暂不支持 Python 3.12+，如遇问题改用 mss 降级方案
+# d3dshot>=0.1.5
+
 # 全局热键
 keyboard>=0.13.5
 
