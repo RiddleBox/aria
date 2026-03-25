@@ -1,83 +1,61 @@
-# ARIA 全局配置
+# ARIA 配置文件
+# 修改后重启 main.py 生效
 
-# ── 感知层 ──────────────────────────────────────────
+# ── 感知层 ──────────────────────────────────────────────────
 perception:
-  # 唤醒词（说这个词后开始监听）
-  wake_word: "aria"
-  # 语音识别模型（本地 Whisper）
-  whisper_model: "base"        # tiny / base / small / medium
-  whisper_language: "zh"       # 中文优先，自动回退英文
-  # 麦克风设备索引（-1 = 系统默认）
-  mic_device_index: -1
-  # 静音检测：超过这么多秒没说话就认为说完了
-  silence_timeout: 1.5
+  hotkey: "ctrl+`"             # 全局热键，按住录音，松开识别
+                               # 也可以改成 "ctrl+home" 或鼠标侧键如 "mouse4"
+  whisper_model: "base"        # tiny(最快) / base / small / medium(最准)
+  whisper_language: "zh"       # 中文优先；说英文也能识别
+  mic_device_index: -1         # -1 = 系统默认麦克风
+  silence_timeout: 1.5         # 静音超过 N 秒自动停止录音
 
-# ── 意图层 ──────────────────────────────────────────
+# ── 意图层（LLM）────────────────────────────────────────────
 intent:
-  # 用哪个 LLM 解析意图
-  provider: "openai"           # openai / anthropic / local
-  model: "gpt-4o-mini"
-  api_key: ""                  # 留空则从环境变量 OPENAI_API_KEY 读取
-  # 本地模型备选（provider=local 时用）
-  local_model_url: "http://localhost:11434/api/chat"  # Ollama
+  provider: "openai"           # openai / local
+  model: "gpt-4o-mini"         # 意图解析用（便宜快）
+  vision_model: "gpt-4o"       # 视觉分析用（看截图）
+  api_key: ""                  # 留空则读环境变量 OPENAI_API_KEY
+  base_url: ""                 # 留空用官方；可填代理如 "https://api.xxx.com/v1"
 
-# ── Action 模块配置 ──────────────────────────────────
+# ── Action 模块 ──────────────────────────────────────────────
 actions:
-
-  capture:
-    enabled: true
-    # OBS WebSocket 配置（用于 Replay Buffer）
-    obs_host: "localhost"
-    obs_port: 4455
-    obs_password: ""           # OBS WebSocket 密码，没设就留空
-    # Replay Buffer 时长（秒），需要和 OBS 里设置一致
-    replay_seconds: 30
-    # 截图保存目录
-    output_dir: "data/captures"
 
   archive:
     enabled: true
-    # 归档写入哪个 Obsidian vault
-    obsidian_vault: "D:/AIproject/game-knowledge-base"
-    # 归档到哪个文件夹
-    target_folder: "06-DesignAssistant-Feed"
-    # 是否同时写本地 aria/data/archive
-    local_backup: true
+    obsidian_vault: "D:/AIproject/aria-vault"   # 新建的独立 vault
+    target_folder: "captures"                   # vault 内的归档文件夹
+
+  answer:
+    enabled: true              # 看截图回答问题
+
+  chat:
+    enabled: true              # 纯对话
+
+  capture:
+    enabled: false             # Phase 1 不用，截图由 perception 直接处理
 
   convert:
-    enabled: true
-    # ffmpeg 路径（留空则从 PATH 找）
-    ffmpeg_path: ""
-    # GIF 参数
-    gif_fps: 15
-    gif_width: 640             # 像素，-1 = 保持原始宽度
-    gif_palette: true          # 是否用 palettegen 提升画质
+    enabled: false             # Phase 2（视频→GIF，需 ffmpeg + 录屏方案确定后启用）
 
-# ── Identity 模块配置 ────────────────────────────────
+# ── Identity 模块 ────────────────────────────────────────────
 identity:
 
   persona:
     name: "Aria"
-    # 性格描述（注入到 LLM system prompt）
     personality: |
       你是 Aria，一个陪伴型 AI 助手。
-      说话简洁自然，不用敬语，像朋友一样交流。
-      当用户在玩游戏时，你能感受到那种专注状态，不会打扰，只在被呼叫时响应。
+      说话简洁自然，像朋友一样交流，不用敬语。
       回复控制在 1-2 句话，除非用户要求更多。
-    # 记忆文件路径
+      用户在玩游戏或专注工作时，你的回应要简短有力，不打扰节奏。
     memory_file: "data/aria_memory.json"
 
   voice:
     enabled: true
-    # TTS 引擎：edge-tts（免费）/ openai / elevenlabs
-    engine: "edge-tts"
-    # edge-tts 音色（中文）
-    edge_voice: "zh-CN-XiaoxiaoNeural"
-    # 语速调整（-50% ~ +50%）
+    engine: "edge-tts"                    # edge-tts（免费）/ openai
+    edge_voice: "zh-CN-XiaoxiaoNeural"    # 中文女声；其他选项见 edge-tts 文档
     rate: "+0%"
-    # 音量
     volume: "+0%"
 
   avatar:
-    enabled: false             # 暂未实现
-    # 预留：vtube_studio_port: 8001
+    enabled: false             # Phase 3

@@ -1,56 +1,35 @@
 """
-core/perception.py — 感知引擎
-负责：唤醒词检测 → 录音 → Whisper 语音识别 → 截图
+core/perception.py — 感知引擎 (Phase 1)
+快捷键触发 → 录音 → Whisper 识别 → 截图（按需）
 """
 import time
 import threading
-import queue
+import tempfile
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Callable
+from typing import Callable, Optional
 
 
 class Perception:
     def __init__(self, config: dict, on_command: Callable[[dict], None]):
-        """
-        config: settings.yaml 里的 perception 配置
-        on_command: 识别到指令后的回调，传入 context dict
-        """
         self.config = config.get("perception", {})
         self.on_command = on_command
         self.running = False
-        self._model = None
+        self._whisper_model = None
+        self._recording = False
+
+    # ── Whisper ──────────────────────────────────────────────
 
     def _load_whisper(self):
-        if self._model is None:
+        if self._whisper_model is None:
             print("[Perception] Loading Whisper model...")
             from faster_whisper import WhisperModel
-            model_size = self.config.get("whisper_model", "base")
-            self._model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            print(f"[Perception] Whisper {model_size} loaded")
-        return self._model
-
-    def take_screenshot(self) -> Optional[str]:
-        """截取当前屏幕，保存到临时目录，返回文件路径。"""
-        try:
-            import mss
-            import mss.tools
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            out_dir = Path(__file__).parent.parent / "data" / "captures"
-            out_dir.mkdir(parents=True, exist_ok=True)
-            path = out_dir / f"screenshot_{ts}.png"
-            with mss.mss() as sct:
-                monitor = sct.monitors[1]  # 主显示器
-                img = sct.grab(monitor)
-                mss.tools.to_png(img.rgb, img.size, output=str(path))
-            print(f"[Perception] Screenshot: {path}")
-            return str(path)
-        except Exception as e:
-            print(f"[Perception] Screenshot failed: {e}")
-            return None
+            size = self.config.get("whisper_model", "base")
+            self._whisper_model = WhisperModel(size, device="cpu", compute_type="int8")
+            print(f"[Perception] Whisper '{size}' ready")
+        return self._whisper_model
 
     def transcribe(self, audio_path: str) -> str:
-        """Whisper 语音转文字。"""
         model = self._load_whisper()
         lang = self.config.get("whisper_language", "zh")
         segments, _ = model.transcribe(
@@ -60,12 +39,15 @@ class Perception:
             vad_filter=True,
         )
         text = "".join(seg.text for seg in segments).strip()
-        print(f"[Perception] Transcribed: {text}")
+        print(f"[Perception] Transcribed: {text!r}")
         return text
 
-    def listen_once(self) -> Optional[str]:
+    # ── 录音 ─────────────────────────────────────────────────
+
+    def record_until_silence(self) -> Optional[str]:
         """
-        录制一段语音（检测到静音则停止），返回保存的音频路径。
+        按下快捷键后开始录，检测到静音自动停。
+        返回 wav 文件路径。
         """
         try:
             import sounddevice as sd
@@ -73,75 +55,130 @@ class Perception:
             import numpy as np
 
             sample_rate = 16000
-            silence_timeout = self.config.get("silence_timeout", 1.5)
+            silence_sec = self.config.get("silence_timeout", 1.5)
+            silence_limit = int(silence_sec * sample_rate / 512)
+            min_frames = int(0.3 * sample_rate / 512)  # 至少录 0.3s
             mic_idx = self.config.get("mic_device_index", None)
             if mic_idx == -1:
                 mic_idx = None
 
-            print("[Perception] Listening...")
+            print("[Perception] Recording... (speak now)")
             frames = []
-            silence_frames = 0
-            silence_limit = int(silence_timeout * sample_rate / 512)
+            silence_count = 0
 
             with sd.InputStream(samplerate=sample_rate, channels=1,
                                 dtype="float32", blocksize=512,
                                 device=mic_idx) as stream:
-                while True:
+                while self._recording:
                     data, _ = stream.read(512)
                     frames.append(data.copy())
-                    rms = np.sqrt(np.mean(data**2))
+                    rms = float((data ** 2).mean() ** 0.5)
                     if rms < 0.01:
-                        silence_frames += 1
+                        silence_count += 1
                     else:
-                        silence_frames = 0
-                    # 至少录 0.5s，然后检测静音
-                    if len(frames) > int(0.5 * sample_rate / 512) and silence_frames > silence_limit:
+                        silence_count = 0
+                    if len(frames) > min_frames and silence_count > silence_limit:
                         break
 
+            if not frames:
+                return None
+
+            import numpy as np
             audio = np.concatenate(frames, axis=0)
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            audio_path = Path(__file__).parent.parent / "data" / f"audio_{ts}.wav"
-            sf.write(str(audio_path), audio, sample_rate)
-            return str(audio_path)
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            sf.write(tmp.name, audio, sample_rate)
+            print(f"[Perception] Audio saved: {tmp.name}")
+            return tmp.name
 
         except Exception as e:
-            print(f"[Perception] Listen failed: {e}")
+            print(f"[Perception] Record error: {e}")
             return None
 
+    # ── 截图 ─────────────────────────────────────────────────
+
+    def take_screenshot(self) -> Optional[str]:
+        try:
+            import mss
+            import mss.tools
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            out = Path(__file__).parent.parent / "data" / "captures"
+            out.mkdir(parents=True, exist_ok=True)
+            path = out / f"screenshot_{ts}.png"
+            with mss.mss() as sct:
+                img = sct.grab(sct.monitors[1])
+                mss.tools.to_png(img.rgb, img.size, output=str(path))
+            print(f"[Perception] Screenshot: {path.name}")
+            return str(path)
+        except Exception as e:
+            print(f"[Perception] Screenshot error: {e}")
+            return None
+
+    # ── 快捷键监听 ────────────────────────────────────────────
+
+    def _on_hotkey_press(self):
+        """快捷键按下：开始录音。"""
+        if self._recording:
+            return
+        self._recording = True
+        # 在新线程里录音，录完后触发处理
+        threading.Thread(target=self._handle_recording, daemon=True).start()
+
+    def _on_hotkey_release(self):
+        """快捷键松开：停止录音。"""
+        self._recording = False
+
+    def _handle_recording(self):
+        """录音完成后的处理流程。"""
+        audio_path = self.record_until_silence()
+        if not audio_path:
+            return
+
+        text = self.transcribe(audio_path)
+        if not text:
+            print("[Perception] Empty transcription, skipping")
+            return
+
+        context = {
+            "transcript": text,
+            "timestamp": datetime.now().isoformat(),
+            "audio_path": audio_path,
+            "screenshot": None,  # 由 intent 层决定是否需要，再调用 take_screenshot
+        }
+        self.on_command(context)
+
+    # ── 启动 ─────────────────────────────────────────────────
+
     def start(self):
-        """启动感知循环（阻塞）。"""
+        import keyboard
+        hotkey = self.config.get("hotkey", "ctrl+`")
+        print(f"[Perception] Hotkey: {hotkey!r}  (hold to record, release to send)")
+
+        keyboard.on_press_key(
+            hotkey.split("+")[-1],
+            lambda e: self._on_hotkey_press() if self._is_hotkey_combo(hotkey) else None,
+            suppress=False,
+        )
+        keyboard.on_release_key(
+            hotkey.split("+")[-1],
+            lambda e: self._on_hotkey_release(),
+            suppress=False,
+        )
+
         self.running = True
-        wake_word = self.config.get("wake_word", "aria").lower()
-        print(f"[Perception] Started. Wake word: '{wake_word}'")
-        print(f"[Perception] Say '{wake_word}' to activate...")
-
+        print("[Perception] Listening for hotkey... (Ctrl+C to quit)")
         while self.running:
-            audio_path = self.listen_once()
-            if not audio_path:
-                time.sleep(0.1)
-                continue
+            time.sleep(0.1)
 
-            text = self.transcribe(audio_path)
-            if not text:
-                continue
-
-            # 检查是否包含唤醒词
-            if wake_word not in text.lower():
-                continue
-
-            print(f"[Perception] Wake word detected! Command: {text}")
-
-            # 触发截图
-            screenshot = self.take_screenshot()
-
-            # 回调
-            context = {
-                "transcript": text,
-                "screenshot": screenshot,
-                "timestamp": datetime.now().isoformat(),
-                "audio_path": audio_path,
-            }
-            self.on_command(context)
+    def _is_hotkey_combo(self, hotkey: str) -> bool:
+        """检查组合键修饰键是否都按下了。"""
+        import keyboard
+        parts = hotkey.lower().split("+")
+        modifiers = parts[:-1]
+        for mod in modifiers:
+            if not keyboard.is_pressed(mod):
+                return False
+        return True
 
     def stop(self):
         self.running = False
+        self._recording = False

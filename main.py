@@ -1,78 +1,84 @@
 """
-main.py — ARIA 启动入口
+main.py — ARIA 启动入口 (Phase 1)
+
+流程：
+  Ctrl+` 按住 → 录音 → 松开/静音停止
+  → Whisper 转文字
+  → GPT-4o 解析意图（需要截图吗？做什么？）
+  → 如需截图 → mss 截图
+  → 路由到对应模块执行
+  → edge-tts 语音回应
 """
 import sys
-import yaml
 import signal
+import yaml
 from pathlib import Path
 
-# 确保项目根目录在 path 里
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
-from core.dispatcher import Dispatcher
-from core.intent import parse_intent
 from core.perception import Perception
+from core.intent import parse_intent
+from core.dispatcher import Dispatcher
 from modules.identity.persona import Persona
 from modules.identity.voice import speak
 
 
 def load_config() -> dict:
-    config_path = ROOT / "config" / "settings.yaml"
-    with open(config_path, encoding="utf-8") as f:
+    with open(ROOT / "config" / "settings.yaml", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def main():
     print("""
-    ╔══════════════════════════════╗
-    ║   ARIA — AI Runtime Agent   ║
-    ║   Say 'aria' to activate    ║
-    ╚══════════════════════════════╝
-    """)
+╔═══════════════════════════════════╗
+║  ARIA — AI Runtime Interface Agent ║
+║  Hold Ctrl+` to speak             ║
+╚═══════════════════════════════════╝""")
 
     config = load_config()
     dispatcher = Dispatcher(config)
     persona = Persona(config)
 
-    print(f"\n[ARIA] Loaded modules: {[m['name'] for m in dispatcher.list_modules()]}")
+    print(f"[ARIA] Modules: {dispatcher.list_modules()}")
+
+    # ── 核心处理流程 ──────────────────────────────────────────
 
     def on_command(context: dict):
-        """感知层检测到指令后的处理流程。"""
-        transcript = context.get("transcript", "")
-        print(f"\n[ARIA] Command: {transcript}")
+        transcript = context["transcript"]
+        print(f"\n[ARIA] ▶ {transcript!r}")
 
-        # 解析意图
+        # 1. 解析意图
         system_prompt = persona.get_system_prompt()
         intent = parse_intent(transcript, config, system_prompt)
-        print(f"[ARIA] Intent: {intent}")
 
-        action = intent.get("action", "chat")
-        reply = intent.get("reply", "好的")
+        # 2. 需要截图？现在截
+        if intent.get("needs_screenshot"):
+            print("[ARIA] Taking screenshot...")
+            screenshot = perception.take_screenshot()
+            context["screenshot"] = screenshot
 
-        if action == "chat":
-            # 普通对话，直接回复
-            speak(reply, config)
-            persona.log_interaction(transcript, "chat", reply)
-            return
+        # 3. 把 intent 的 reply 和 params 合并进 context
+        context["reply"] = intent.get("reply", "")
+        context.update(intent.get("params", {}))
 
-        # 执行对应模块
+        # 4. 执行模块
         result = dispatcher.dispatch(intent, context)
-        print(f"[ARIA] Result: {result}")
+        print(f"[ARIA] Result: status={result.get('status')} msg={result.get('message', '')[:60]}")
 
-        # 语音回复
-        final_reply = result.get("message", reply)
-        speak(final_reply, config)
+        # 5. 语音回应
+        reply_text = result.get("message") or intent.get("reply") or "好的"
+        speak(reply_text, config)
 
-        # 记录交互
-        persona.log_interaction(transcript, action, final_reply)
+        # 6. 记录交互
+        persona.log_interaction(transcript, intent.get("action", "?"), reply_text)
 
-    # 启动感知引擎
+    # ── 启动感知层 ────────────────────────────────────────────
+
     perception = Perception(config, on_command)
 
-    # 优雅退出
-    def handle_exit(sig, frame):
-        print("\n[ARIA] Shutting down...")
+    def handle_exit(sig=None, frame=None):
+        print("\n[ARIA] Goodbye.")
         perception.stop()
         sys.exit(0)
 
@@ -81,7 +87,7 @@ def main():
     try:
         perception.start()
     except KeyboardInterrupt:
-        handle_exit(None, None)
+        handle_exit()
 
 
 if __name__ == "__main__":
