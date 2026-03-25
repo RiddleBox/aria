@@ -40,11 +40,25 @@ def _speak_edge(text: str, cfg: dict):
 
         async def _run():
             communicate = edge_tts.Communicate(text, voice, rate=rate, volume=volume)
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                tmp_path = f.name
-            await communicate.save(tmp_path)
-            _play_audio(tmp_path)
-            Path(tmp_path).unlink(missing_ok=True)
+            # 直接存 wav，SoundPlayer 原生支持
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            tmp_path = tmp.name
+            tmp.close()
+            # edge-tts 默认输出 mp3，用 mp3 临时文件再转 wav
+            mp3_path = tmp_path.replace(".wav", ".mp3")
+            await communicate.save(mp3_path)
+            # 用 ffmpeg 转 wav（如果有），否则直接播 mp3
+            import shutil
+            ffmpeg = shutil.which("ffmpeg")
+            if ffmpeg:
+                import subprocess
+                subprocess.run([ffmpeg, "-y", "-i", mp3_path, tmp_path],
+                               capture_output=True)
+                _play_audio(tmp_path)
+                Path(tmp_path).unlink(missing_ok=True)
+            else:
+                _play_audio(mp3_path)
+            Path(mp3_path).unlink(missing_ok=True)
 
         asyncio.run(_run())
     except ImportError:
@@ -73,40 +87,22 @@ def _speak_openai(text: str, cfg: dict, full_config: dict):
 
 
 def _play_audio(path: str):
-    """播放音频文件（Windows 优先用 PowerShell）。"""
+    """播放音频文件（Windows 用 SoundPlayer，仅支持 wav）。"""
     import platform
-    import subprocess
     system = platform.system()
     try:
         if system == "Windows":
-            # PowerShell Media.SoundPlayer 只支持 wav，mp3 用 wmplayer
-            if path.endswith(".wav"):
-                subprocess.run(
-                    ["powershell", "-c", f'(New-Object Media.SoundPlayer "{path}").PlaySync()'],
-                    check=True, capture_output=True
-                )
-            else:
-                # mp3 用 Windows Media Player CLI
-                subprocess.run(
-                    ["powershell", "-c",
-                     f'$player = New-Object System.Windows.Media.MediaPlayer; '
-                     f'Add-Type -AssemblyName PresentationCore; '
-                     f'$player.Open([System.Uri]"{path}"); '
-                     f'$player.Play(); Start-Sleep -Seconds 10; $player.Stop()'],
-                    check=True, capture_output=True, timeout=30
-                )
+            subprocess.run(
+                ["powershell", "-c",
+                 f'(New-Object Media.SoundPlayer "{path}").PlaySync()'],
+                check=True, capture_output=True
+            )
         elif system == "Darwin":
             subprocess.run(["afplay", path], check=True)
         else:
             subprocess.run(["aplay", path], check=True)
     except Exception as e:
         print(f"[Voice] Playback error: {e}")
-        # 最后兜底：playsound
-        try:
-            import playsound
-            playsound.playsound(path)
-        except Exception:
-            print(f"[Voice] Could not play audio: {path}")
 
 
 # 供 dispatcher 加载的接口
