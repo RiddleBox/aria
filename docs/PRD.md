@@ -164,13 +164,15 @@ AI 理解意图
 
 | 问题 | 决策 | 理由 |
 |---|---|---|
-| 全局热键方案 | `keyboard` 库 | 目标场景为窗口化/无边框模式，够用；全屏独占留作后续 |
-| 视觉分析模型 | OpenAI GPT-4o Vision | 效果优先，成本可接受，后续再评估本地方案 |
-| Obsidian 归档位置 | 新建独立 vault（ARIA 专用）| 与 game-knowledge-base 解耦，职责清晰 |
-| OBS 依赖 | 必须，用户需预装 | Replay Buffer 是"录前N秒"的唯一低成本方案；纯 Python 录屏留作降级 |
+| 全局热键按键 | `Ctrl+\`` | 游戏场景少占用，位置顺手；鼠标侧键等自定义键位配置文件支持 |
+| Phase 1 视频录制 | 不做，只截图 | 录视频方案待专项调研，OBS 太笨重，Phase 1 截图够用 |
+| Obsidian vault | 新建独立 vault，路径 `D:\AIproject\aria-vault` | 与 game-knowledge-base 解耦 |
+| 项目名称 | ARIA（AI Runtime Interface Agent）| ✅ 确认 |
 
 ## 八、开放问题（待后续决策）
 
-1. **新 Obsidian vault 路径**：放在哪个目录？建议 `D:\AIproject\aria-vault`
-2. **OBS 降级方案**：没装 OBS 时用 `mss` 连续截图模拟 Replay Buffer？
-3. **热键具体按键**：用什么组合键？建议 `Ctrl+Alt+A`，不与常见游戏冲突
+1. **录视频方案**（Phase 2 专项调研）：OBS 太笨重、画质控制差，需调研更轻量的替代方案。候选方向：
+   - `ffmpeg` 直接捕获屏幕（无需第三方软件，但 Windows 下配置略复杂）
+   - `D3D / DXGI Desktop Duplication API`（Windows 原生，低开销，游戏兼容性好）
+   - `obs-cli` 无界面模式（OBS 去掉 UI，只保留录制能力）
+   - 待专项调研后决策
