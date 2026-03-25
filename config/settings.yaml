@@ -12,13 +12,11 @@ perception:
   
   # 截图优化配置
   screenshot:
-    max_width: 1920           # 最大宽度，超过则自动缩放
-    max_height: 1080          # 最大高度，超过则自动缩放
-    jpeg_quality: 80          # JPEG压缩质量 (0-100)，80在质量和大小间取得平衡
-    # 可选：启用智能区域检测（短期目标）
-    enable_smart_crop: false   # 是否启用智能区域裁剪
-    # 可选：启用差异检测（长期目标）
-    enable_diff_detection: false # 是否只保存变化区域
+    max_width: 1920
+    max_height: 1080
+    jpeg_quality: 80
+    enable_smart_crop: false
+    enable_diff_detection: false
 
 # ── 意图层（LLM）────────────────────────────────────────────
 intent:
@@ -26,12 +24,12 @@ intent:
 
   # 意图解析：GLM-4-Flash（免费）
   model: "glm-4-flash"
-  api_key: "fa9080ee054244adaacdf18d96efe3e9.QmfoPIXxidZPRvd4"                  # 留空则读环境变量 ARIA_INTENT_KEY
+  api_key: ""                  # 留空则读环境变量 ARIA_INTENT_KEY
   base_url: "https://open.bigmodel.cn/api/paas/v4"
 
   # 视觉分析：Gemini 2.0 Flash（免费，效果强）
   vision_model: "gemini-2.0-flash"
-  vision_api_key: "AIzaSyCXgfrAMBfkvgmMEHZhblYiqKV365YbizI"           # 留空则读环境变量 ARIA_VISION_KEY
+  vision_api_key: ""           # 留空则读环境变量 ARIA_VISION_KEY
   vision_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
 
 # ── Action 模块 ──────────────────────────────────────────────
@@ -39,17 +37,17 @@ actions:
 
   archive:
     enabled: true
-    obsidian_vault: "i:/AIPROJECT/aria/data/vault"   # 项目目录下的vault
-    target_folder: "captures"                   # vault 内的归档文件夹
+    obsidian_vault: "i:/AIPROJECT/aria/data/vault"
+    target_folder: "captures"
 
   answer:
-    enabled: true              # 看截图回答问题
+    enabled: true
 
   chat:
-    enabled: true              # 纯对话
+    enabled: true
 
   capture:
-    enabled: false             # Phase 1 不用，截图由 perception 直接处理
+    enabled: false
 
   convert:
     enabled: false             # Phase 2（视频→GIF，需 ffmpeg + 录屏方案确定后启用）
@@ -68,8 +66,8 @@ identity:
 
   voice:
     enabled: true
-    engine: "edge-tts"                    # edge-tts（免费）/ openai
-    edge_voice: "zh-CN-XiaoxiaoNeural"    # 中文女声；其他选项见 edge-tts 文档
+    engine: "edge-tts"
+    edge_voice: "zh-CN-XiaoxiaoNeural"
     rate: "+0%"
     volume: "+0%"
 
