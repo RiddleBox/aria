@@ -115,21 +115,22 @@ class Perception:
 
     # ── 快捷键监听 ────────────────────────────────────────────
 
-    def _on_hotkey_press(self):
-        """快捷键按下：开始录音。"""
+    def _on_hotkey(self):
+        """
+        按一下热键 → 开始录音（说完静音自动停）
+        录音期间再按热键 → 强制停止
+        """
         if self._recording:
+            # 已在录音，强制停止
+            self._recording = False
             return
         self._recording = True
-        # 在新线程里录音，录完后触发处理
         threading.Thread(target=self._handle_recording, daemon=True).start()
-
-    def _on_hotkey_release(self):
-        """快捷键松开：停止录音。"""
-        self._recording = False
 
     def _handle_recording(self):
         """录音完成后的处理流程。"""
         audio_path = self.record_until_silence()
+        self._recording = False
         if not audio_path:
             return
 
@@ -142,7 +143,7 @@ class Perception:
             "transcript": text,
             "timestamp": datetime.now().isoformat(),
             "audio_path": audio_path,
-            "screenshot": None,  # 由 intent 层决定是否需要，再调用 take_screenshot
+            "screenshot": None,
         }
         self.on_command(context)
 
@@ -151,33 +152,14 @@ class Perception:
     def start(self):
         import keyboard
         hotkey = self.config.get("hotkey", "ctrl+`")
-        print(f"[Perception] Hotkey: {hotkey!r}  (hold to record, release to send)")
+        print(f"[Perception] Hotkey: {hotkey!r}  (press once to start recording, silence to stop)")
 
-        keyboard.on_press_key(
-            hotkey.split("+")[-1],
-            lambda e: self._on_hotkey_press() if self._is_hotkey_combo(hotkey) else None,
-            suppress=False,
-        )
-        keyboard.on_release_key(
-            hotkey.split("+")[-1],
-            lambda e: self._on_hotkey_release(),
-            suppress=False,
-        )
+        keyboard.add_hotkey(hotkey, self._on_hotkey, suppress=False)
 
         self.running = True
-        print("[Perception] Listening for hotkey... (Ctrl+C to quit)")
+        print(f"[Perception] Ready. Press {hotkey} and speak...")
         while self.running:
             time.sleep(0.1)
-
-    def _is_hotkey_combo(self, hotkey: str) -> bool:
-        """检查组合键修饰键是否都按下了。"""
-        import keyboard
-        parts = hotkey.lower().split("+")
-        modifiers = parts[:-1]
-        for mod in modifiers:
-            if not keyboard.is_pressed(mod):
-                return False
-        return True
 
     def stop(self):
         self.running = False

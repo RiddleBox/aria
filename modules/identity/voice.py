@@ -73,20 +73,40 @@ def _speak_openai(text: str, cfg: dict, full_config: dict):
 
 
 def _play_audio(path: str):
-    """播放音频文件（跨平台）。"""
+    """播放音频文件（Windows 优先用 PowerShell）。"""
+    import platform
+    import subprocess
+    system = platform.system()
     try:
-        import playsound
-        playsound.playsound(path)
-    except ImportError:
-        # 备选：用系统命令
-        import platform
-        if platform.system() == "Windows":
-            subprocess.run(["powershell", "-c", f'(New-Object Media.SoundPlayer "{path}").PlaySync()'],
-                          capture_output=True)
-        elif platform.system() == "Darwin":
-            subprocess.run(["afplay", path])
+        if system == "Windows":
+            # PowerShell Media.SoundPlayer 只支持 wav，mp3 用 wmplayer
+            if path.endswith(".wav"):
+                subprocess.run(
+                    ["powershell", "-c", f'(New-Object Media.SoundPlayer "{path}").PlaySync()'],
+                    check=True, capture_output=True
+                )
+            else:
+                # mp3 用 Windows Media Player CLI
+                subprocess.run(
+                    ["powershell", "-c",
+                     f'$player = New-Object System.Windows.Media.MediaPlayer; '
+                     f'Add-Type -AssemblyName PresentationCore; '
+                     f'$player.Open([System.Uri]"{path}"); '
+                     f'$player.Play(); Start-Sleep -Seconds 10; $player.Stop()'],
+                    check=True, capture_output=True, timeout=30
+                )
+        elif system == "Darwin":
+            subprocess.run(["afplay", path], check=True)
         else:
-            subprocess.run(["aplay", path])
+            subprocess.run(["aplay", path], check=True)
+    except Exception as e:
+        print(f"[Voice] Playback error: {e}")
+        # 最后兜底：playsound
+        try:
+            import playsound
+            playsound.playsound(path)
+        except Exception:
+            print(f"[Voice] Could not play audio: {path}")
 
 
 # 供 dispatcher 加载的接口
