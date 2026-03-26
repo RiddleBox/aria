@@ -59,10 +59,9 @@ def _speak_edge(text: str, cfg: dict):
 def _play_audio(mp3_path: str):
     """
     播放 mp3 文件，按优先级尝试多种方案：
-    1. simpleaudio（mp3→wav 转换后播放，最稳定）
-    2. winmm MCI 命令（Windows 原生，无超时风险）
-    3. PowerShell Media.SoundPlayer（轻量，仅支持 wav）
-    4. 静默降级（只打印文字）
+    1. winmm MCI 命令（Windows 原生，无超时风险）
+    2. simpleaudio（mp3→wav 转换后播放）
+    3. 静默降级（只打印文字）
     """
     import platform
     system = platform.system()
@@ -76,11 +75,22 @@ def _play_audio(mp3_path: str):
             print(f"[Voice] Playback error: {e}")
         return
 
-    # Windows：优先用 simpleaudio（需先转 wav）
+    # Windows：优先用 winmm MCI（直接播 mp3，无依赖，无超时问题）
+    try:
+        import ctypes
+        winmm = ctypes.windll.winmm
+        alias = "aria_tts"
+        winmm.mciSendStringW(f'open "{mp3_path}" type mpegvideo alias {alias}', None, 0, None)
+        winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
+        winmm.mciSendStringW(f'close {alias}', None, 0, None)
+        return
+    except Exception as e:
+        print(f"[Voice] winmm MCI error: {e}")
+
+    # 降级：simpleaudio（需要先转 wav）
     wav_path = mp3_path.replace(".mp3", ".wav")
     converted = False
     try:
-        # 用 ffmpeg 转 wav（如果有的话）
         result = subprocess.run(
             ["ffmpeg", "-y", "-i", mp3_path, "-ar", "22050", "-ac", "1", wav_path],
             capture_output=True, timeout=10
@@ -89,14 +99,6 @@ def _play_audio(mp3_path: str):
             converted = True
     except Exception:
         pass
-
-    if not converted:
-        # 没有 ffmpeg，用 audioop 方式转（Python 内置）
-        try:
-            _mp3_to_wav(mp3_path, wav_path)
-            converted = True
-        except Exception:
-            pass
 
     if converted:
         try:
@@ -109,18 +111,6 @@ def _play_audio(mp3_path: str):
         except Exception as e:
             print(f"[Voice] simpleaudio error: {e}")
             Path(wav_path).unlink(missing_ok=True)
-
-    # 降级：winmm MCI 命令（直接播 mp3，无超时问题）
-    try:
-        import ctypes
-        winmm = ctypes.windll.winmm
-        alias = "aria_tts"
-        winmm.mciSendStringW(f'open "{mp3_path}" type mpegvideo alias {alias}', None, 0, None)
-        winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
-        winmm.mciSendStringW(f'close {alias}', None, 0, None)
-        return
-    except Exception as e:
-        print(f"[Voice] winmm MCI error: {e}")
 
     print(f"[Voice] All playback methods failed, text only")
 
