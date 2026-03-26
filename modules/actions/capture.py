@@ -72,7 +72,9 @@ def _record_screen(output_dir: Path, ts: str, duration: int) -> str | None:
     import numpy as np
 
     fps = 10  # 录屏帧率，10fps 够看
-    tmp_dir = Path(tempfile.mkdtemp())
+    # 用固定短路径避免中文/空格/短路径问题
+    tmp_dir = Path(tempfile.gettempdir()) / f"aria_cap_{ts}"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"capture_{ts}.mp4"
 
     print(f"[Capture] Recording {duration}s at {fps}fps...")
@@ -104,10 +106,12 @@ def _record_screen(output_dir: Path, ts: str, duration: int) -> str | None:
                 elapsed = time.time() - t0
                 time.sleep(max(0, interval - elapsed))
 
-        print(f"[Capture] Captured {frame_count} frames, composing video...")
+        print(f"[Capture] Captured {frame_count} frames -> {tmp_dir}")
 
         # ffmpeg 合成
         ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+        ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
+        print(f"[Capture] ffmpeg: {ffmpeg_path}")
         result = subprocess.run([
             ffmpeg, "-y",
             "-framerate", str(fps),
@@ -120,7 +124,7 @@ def _record_screen(output_dir: Path, ts: str, duration: int) -> str | None:
 
         if result.returncode != 0:
             err = result.stderr.decode(errors="ignore")
-            print(f"[Capture] ffmpeg error: {err[-200:]}")
+            print(f"[Capture] ffmpeg error: {err[-500:]}")
             return None
 
         size_mb = output_path.stat().st_size / 1024 / 1024
