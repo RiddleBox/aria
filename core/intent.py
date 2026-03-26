@@ -43,6 +43,16 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
 - 纯聊天、问时间、问天气等明确与屏幕无关的问题
 - 用户明确说了要操作的文件路径
 - capture 动作（截图由模块内部处理）
+- remind 动作（和屏幕无关）
+
+## 容易误判的情况（反例）
+
+- "帮我录一下" → capture，不是 archive
+- "截图" 单独说 → archive（保存截图），不是 answer
+- "看看这个" 后面没有问题 → archive，不是 answer
+- "你好" / "在吗" / "嗯" → chat，不要截图
+- "提醒我" / "定时" → remind，不需要截图
+- 听不懂或过于简短（如"嗯"、"啊"、"哦"）→ chat，reply 用自然回应
 
 ## 输出格式（严格 JSON）
 
@@ -108,6 +118,15 @@ def parse_intent(transcript: str, config: dict, persona_prompt: str = "") -> dic
     解析用户语音意图。
     如果 needs_screenshot=True，调用方负责截图并把路径填入 context。
     """
+    # 过短或无效输入直接降级，不浪费 API 调用
+    if not transcript or len(transcript.strip()) < 2:
+        return {
+            "needs_screenshot": False,
+            "action": "chat",
+            "params": {"message": transcript},
+            "reply": "嗯？",
+        }
+
     provider = config.get("intent", {}).get("provider", "openai")
 
     if provider == "openai":
@@ -116,6 +135,13 @@ def parse_intent(transcript: str, config: dict, persona_prompt: str = "") -> dic
         result = _parse_local(transcript, config)
     else:
         result = _keyword_fallback(transcript)
+
+    # 兜底：action 不在已知列表里，降级到 chat
+    known_actions = {"archive", "answer", "capture", "convert", "remind", "chat"}
+    if result.get("action") not in known_actions:
+        print(f"[Intent] Unknown action '{result.get('action')}', fallback to chat")
+        result["action"] = "chat"
+        result["needs_screenshot"] = False
 
     print(f"[Intent] action={result.get('action')} screenshot={result.get('needs_screenshot')}")
     return result

@@ -32,11 +32,24 @@ class Perception:
     def transcribe(self, audio_path: str) -> str:
         model = self._load_whisper()
         lang = self.config.get("whisper_language", "zh")
+
+        # initial_prompt 帮助 Whisper 识别游戏/AI 场景专有词
+        initial_prompt = self.config.get(
+            "whisper_initial_prompt",
+            "这是一段中文语音指令，内容可能包含：截图、录屏、分析、提醒、番茄钟、"
+            "游戏、ARIA、帮我、录一下、看看这个、归档等词语。"
+        )
+
         segments, _ = model.transcribe(
             audio_path,
             language=lang,
             beam_size=5,
-            vad_filter=False,
+            vad_filter=True,           # 过滤背景噪音
+            vad_parameters=dict(
+                min_silence_duration_ms=300,   # 300ms 静音视为结束
+                speech_pad_ms=100,             # 前后各留 100ms
+            ),
+            initial_prompt=initial_prompt,
         )
         text = "".join(seg.text for seg in segments).strip()
         print(f"[Perception] Transcribed: {text!r}")
