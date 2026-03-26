@@ -4,6 +4,8 @@ core/dispatcher.py — 调度器 (Phase 1)
 """
 import importlib.util
 from pathlib import Path
+from datetime import datetime
+from core.bus import bus
 
 
 class Dispatcher:
@@ -35,10 +37,21 @@ class Dispatcher:
             return {"status": "error", "message": f"没有找到模块: {action}"}
         try:
             merged = {**context, **intent.get("params", {})}
-            return module.run(merged, self.config)
+            result = module.run(merged, self.config)
         except Exception as e:
             print(f"[Dispatcher] Module error ({action}): {e}")
-            return {"status": "error", "message": str(e)}
+            result = {"status": "error", "message": str(e)}
+
+        # 广播事件，供 Godot 等外部监听方订阅
+        bus.publish("aria.action_complete", {
+            "event": "aria.action_complete",
+            "action": action,
+            "reply": result.get("message", ""),
+            "timestamp": datetime.now().isoformat(),
+            "status": result.get("status", "ok"),
+            "data": result,
+        })
+        return result
 
     def list_modules(self) -> list[str]:
         return list(self.modules.keys())
