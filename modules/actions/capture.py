@@ -22,10 +22,9 @@ def run(context: dict, config: dict) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    duration = int(context.get("duration", 10))  # 默认录10秒
+    duration = int(context.get("duration", 10))  # 从 intent params 读时长，默认10秒
+    print(f"[Capture] Will record {duration}s")
     results = {}
-
-    # 1. 截图
     screenshot = context.get("screenshot")
     if not screenshot:
         try:
@@ -46,10 +45,10 @@ def run(context: dict, config: dict) -> dict:
     if video_path:
         results["video"] = video_path
         results["status"] = "ok"
-        results["message"] = f"录好了，{duration}秒视频已保存"
+        results["message"] = f"录好了，{duration}秒视频已保存到 {Path(video_path).name}"
     else:
         results["status"] = "ok"
-        results["message"] = f"截图已保存，视频录制失败（可能缺少 ffmpeg）"
+        results["message"] = f"截图已保存，视频录制失败（ffmpeg 没找到，检查一下 PATH）"
 
     results["note"] = context.get("note", context.get("transcript", ""))
     results["timestamp"] = ts

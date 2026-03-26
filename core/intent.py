@@ -60,11 +60,18 @@ capture 动作示例：
   "needs_screenshot": false,
   "action": "capture",
   "params": {
-    "duration": 10,
+    "duration": 15,
     "note": "用户想录的内容备注"
   },
-  "reply": "好，录10秒"
+  "reply": "好，录15秒"
 }
+
+## 时长提取规则（capture 专用）
+- 用户说"录10秒" → duration=10
+- 用户说"录半分钟" → duration=30
+- 用户说"录一分钟" → duration=60
+- 用户没说时长 → duration=10（默认）
+- reply 里要带上实际时长，如"好，录10秒"
 
 ## 注意
 - reply 要符合 ARIA 的性格（简短、自然、不用敬语）
