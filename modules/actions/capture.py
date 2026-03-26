@@ -105,20 +105,26 @@ def _record_screen(output_dir: Path, ts: str, duration: int) -> str | None:
                 elapsed = time.time() - t0
                 time.sleep(max(0, interval - elapsed))
 
-        print(f"[Capture] Captured {frame_count} frames -> {tmp_dir}")
+        # 验证帧文件
+        frames = sorted(tmp_dir.glob("frame_*.jpg"))
+        print(f"[Capture] Captured {len(frames)} frames -> {tmp_dir.resolve()}")
+        if not frames:
+            print("[Capture] No frames captured!")
+            return None
 
-        # ffmpeg 合成
-        ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
-        ffmpeg_path = shutil.which("ffmpeg") or "ffmpeg"
-        print(f"[Capture] ffmpeg: {ffmpeg_path}")
+        # ffmpeg 合成（全部用绝对路径）
+        ffmpeg_exe = shutil.which("ffmpeg") or "ffmpeg"
+        print(f"[Capture] ffmpeg: {ffmpeg_exe}")
+        input_pattern = str((tmp_dir / "frame_%05d.jpg").resolve())
+        output_abs = str(output_path.resolve())
         result = subprocess.run([
-            ffmpeg, "-y",
+            ffmpeg_exe, "-y",
             "-framerate", str(fps),
-            "-i", str(tmp_dir / "frame_%05d.jpg"),
+            "-i", input_pattern,
             "-c:v", "libx264",
             "-pix_fmt", "yuv420p",
             "-crf", "26",
-            str(output_path)
+            output_abs
         ], capture_output=True, timeout=60)
 
         if result.returncode != 0:
