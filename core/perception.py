@@ -190,6 +190,14 @@ class Perception:
             # 已在录音，强制停止
             self._recording = False
             return
+
+        # 按下热键时，打断当前 TTS 播放
+        try:
+            from modules.identity.voice import interrupt
+            interrupt()
+        except Exception:
+            pass
+
         self._recording = True
         threading.Thread(target=self._handle_recording, daemon=True).start()
 

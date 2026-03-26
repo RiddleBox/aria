@@ -1,10 +1,12 @@
 """
 modules/identity/voice.py — TTS 语音输出模块
 支持 edge-tts（免费）/ openai
+支持打断：按下热键时停止当前播放
 """
 import asyncio
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 MANIFEST = {
@@ -13,6 +15,15 @@ MANIFEST = {
     "description": "Aria 的语音输出（TTS）",
 }
 
+# 全局打断信号
+_stop_event = threading.Event()
+_play_lock = threading.Lock()
+
+
+def interrupt():
+    """外部调用此函数打断当前 TTS 播放。"""
+    _stop_event.set()
+
 
 def speak(text: str, config: dict):
     """同步入口：让 Aria 说话。"""
@@ -20,6 +31,9 @@ def speak(text: str, config: dict):
     if not cfg.get("enabled", True):
         print(f"[Voice] (muted) {text}")
         return
+
+    # 清除上一次的打断信号
+    _stop_event.clear()
 
     engine = cfg.get("engine", "edge-tts")
     if engine == "edge-tts":
@@ -44,7 +58,8 @@ def _speak_edge(text: str, cfg: dict):
             mp3_path = tmp.name
             tmp.close()
             await communicate.save(mp3_path)
-            _play_audio(mp3_path)
+            if not _stop_event.is_set():
+                _play_audio(mp3_path)
             Path(mp3_path).unlink(missing_ok=True)
 
         asyncio.run(_run())
@@ -58,36 +73,55 @@ def _speak_edge(text: str, cfg: dict):
 
 def _play_audio(mp3_path: str):
     """
-    播放 mp3 文件，按优先级尝试多种方案：
-    1. winmm MCI 命令（Windows 原生，无超时风险）
-    2. simpleaudio（mp3→wav 转换后播放）
-    3. 静默降级（只打印文字）
+    播放 mp3，支持打断（_stop_event 被 set 时立即停止）。
+    优先级：winmm MCI → simpleaudio → 降级
     """
     import platform
     system = platform.system()
 
     if system != "Windows":
-        # macOS / Linux
         try:
-            subprocess.run(["afplay" if system == "Darwin" else "mpg123", "-q", mp3_path],
-                           check=True, timeout=60)
+            proc = subprocess.Popen(
+                ["afplay" if system == "Darwin" else "mpg123", "-q", mp3_path]
+            )
+            while proc.poll() is None:
+                if _stop_event.is_set():
+                    proc.terminate()
+                    print("[Voice] Interrupted")
+                    return
+                threading.Event().wait(0.1)
         except Exception as e:
             print(f"[Voice] Playback error: {e}")
         return
 
-    # Windows：优先用 winmm MCI（直接播 mp3，无依赖，无超时问题）
+    # Windows：winmm MCI（直接播 mp3，支持实时打断）
     try:
         import ctypes
         winmm = ctypes.windll.winmm
         alias = "aria_tts"
         winmm.mciSendStringW(f'open "{mp3_path}" type mpegvideo alias {alias}', None, 0, None)
-        winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
+        winmm.mciSendStringW(f'play {alias}', None, 0, None)  # 非阻塞
+
+        # 轮询播放状态，支持打断
+        while True:
+            if _stop_event.is_set():
+                winmm.mciSendStringW(f'stop {alias}', None, 0, None)
+                winmm.mciSendStringW(f'close {alias}', None, 0, None)
+                print("[Voice] Interrupted")
+                return
+            # 查询播放状态
+            buf = ctypes.create_unicode_buffer(128)
+            winmm.mciSendStringW(f'status {alias} mode', buf, 127, None)
+            if buf.value != "playing":
+                break
+            threading.Event().wait(0.05)  # 50ms 轮询
+
         winmm.mciSendStringW(f'close {alias}', None, 0, None)
         return
     except Exception as e:
         print(f"[Voice] winmm MCI error: {e}")
 
-    # 降级：simpleaudio（需要先转 wav）
+    # 降级：simpleaudio
     wav_path = mp3_path.replace(".mp3", ".wav")
     converted = False
     try:
@@ -105,7 +139,12 @@ def _play_audio(mp3_path: str):
             import simpleaudio as sa
             wave_obj = sa.WaveObject.from_wave_file(wav_path)
             play_obj = wave_obj.play()
-            play_obj.wait_done()
+            while play_obj.is_playing():
+                if _stop_event.is_set():
+                    play_obj.stop()
+                    print("[Voice] Interrupted")
+                    break
+                threading.Event().wait(0.05)
             Path(wav_path).unlink(missing_ok=True)
             return
         except Exception as e:
@@ -113,19 +152,6 @@ def _play_audio(mp3_path: str):
             Path(wav_path).unlink(missing_ok=True)
 
     print(f"[Voice] All playback methods failed, text only")
-
-
-def _mp3_to_wav(mp3_path: str, wav_path: str):
-    """
-    用 pydub 或 mutagen 把 mp3 转 wav（ffmpeg 不可用时的纯 Python 方案）。
-    edge-tts 实际上支持直接输出 wav，但接口是 mp3，所以这里做转换兜底。
-    """
-    try:
-        from pydub import AudioSegment
-        audio = AudioSegment.from_mp3(mp3_path)
-        audio.export(wav_path, format="wav")
-    except ImportError:
-        raise RuntimeError("pydub not available")
 
 
 def _speak_openai(text: str, cfg: dict, full_config: dict):
@@ -139,7 +165,8 @@ def _speak_openai(text: str, cfg: dict, full_config: dict):
             tmp_path = f.name
         resp = client.audio.speech.create(model="tts-1", voice="nova", input=text)
         resp.stream_to_file(tmp_path)
-        _play_audio(tmp_path)
+        if not _stop_event.is_set():
+            _play_audio(tmp_path)
         Path(tmp_path).unlink(missing_ok=True)
     except Exception as e:
         print(f"[Voice] OpenAI TTS failed: {e}")
