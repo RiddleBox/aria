@@ -31,7 +31,7 @@ def speak(text: str, config: dict):
 
 
 def _speak_edge(text: str, cfg: dict):
-    """使用 edge-tts 生成 mp3，用 Windows Media Player 播放。"""
+    """使用 edge-tts 生成音频并播放。"""
     try:
         import edge_tts
         voice = cfg.get("edge_voice", "zh-CN-XiaoxiaoNeural")
@@ -44,7 +44,7 @@ def _speak_edge(text: str, cfg: dict):
             mp3_path = tmp.name
             tmp.close()
             await communicate.save(mp3_path)
-            _play_mp3(mp3_path)
+            _play_audio(mp3_path)
             Path(mp3_path).unlink(missing_ok=True)
 
         asyncio.run(_run())
@@ -56,35 +56,86 @@ def _speak_edge(text: str, cfg: dict):
         print(f"[Voice] {text}")
 
 
-def _play_mp3(path: str):
-    """用 Windows Media Player COM 对象播放 mp3（同步等待播完）。"""
+def _play_audio(mp3_path: str):
+    """
+    播放 mp3 文件，按优先级尝试多种方案：
+    1. simpleaudio（mp3→wav 转换后播放，最稳定）
+    2. winmm MCI 命令（Windows 原生，无超时风险）
+    3. PowerShell Media.SoundPlayer（轻量，仅支持 wav）
+    4. 静默降级（只打印文字）
+    """
     import platform
     system = platform.system()
+
+    if system != "Windows":
+        # macOS / Linux
+        try:
+            subprocess.run(["afplay" if system == "Darwin" else "mpg123", "-q", mp3_path],
+                           check=True, timeout=60)
+        except Exception as e:
+            print(f"[Voice] Playback error: {e}")
+        return
+
+    # Windows：优先用 simpleaudio（需先转 wav）
+    wav_path = mp3_path.replace(".mp3", ".wav")
+    converted = False
     try:
-        if system == "Windows":
-            # WMP COM 对象，播完自动退出
-            ps_script = (
-                f'$wmp = New-Object -ComObject WMPlayer.OCX; '
-                f'$wmp.settings.volume = 100; '
-                f'$wmp.URL = "{path}"; '
-                f'$wmp.controls.play(); '
-                f'Start-Sleep -Milliseconds 500; '
-                f'while ($wmp.playState -ne 1) {{ Start-Sleep -Milliseconds 200 }}; '
-                f'$wmp.close()'
-            )
-            result = subprocess.run(
-                ["powershell", "-NoProfile", "-NonInteractive", "-c", ps_script],
-                capture_output=True, timeout=30
-            )
-            if result.returncode != 0:
-                err = result.stderr.decode(errors="ignore")
-                print(f"[Voice] WMP error: {err[:100]}")
-        elif system == "Darwin":
-            subprocess.run(["afplay", path], check=True)
-        else:
-            subprocess.run(["mpg123", "-q", path], check=True)
+        # 用 ffmpeg 转 wav（如果有的话）
+        result = subprocess.run(
+            ["ffmpeg", "-y", "-i", mp3_path, "-ar", "22050", "-ac", "1", wav_path],
+            capture_output=True, timeout=10
+        )
+        if result.returncode == 0:
+            converted = True
+    except Exception:
+        pass
+
+    if not converted:
+        # 没有 ffmpeg，用 audioop 方式转（Python 内置）
+        try:
+            _mp3_to_wav(mp3_path, wav_path)
+            converted = True
+        except Exception:
+            pass
+
+    if converted:
+        try:
+            import simpleaudio as sa
+            wave_obj = sa.WaveObject.from_wave_file(wav_path)
+            play_obj = wave_obj.play()
+            play_obj.wait_done()
+            Path(wav_path).unlink(missing_ok=True)
+            return
+        except Exception as e:
+            print(f"[Voice] simpleaudio error: {e}")
+            Path(wav_path).unlink(missing_ok=True)
+
+    # 降级：winmm MCI 命令（直接播 mp3，无超时问题）
+    try:
+        import ctypes
+        winmm = ctypes.windll.winmm
+        alias = "aria_tts"
+        winmm.mciSendStringW(f'open "{mp3_path}" type mpegvideo alias {alias}', None, 0, None)
+        winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
+        winmm.mciSendStringW(f'close {alias}', None, 0, None)
+        return
     except Exception as e:
-        print(f"[Voice] Playback error: {e}")
+        print(f"[Voice] winmm MCI error: {e}")
+
+    print(f"[Voice] All playback methods failed, text only")
+
+
+def _mp3_to_wav(mp3_path: str, wav_path: str):
+    """
+    用 pydub 或 mutagen 把 mp3 转 wav（ffmpeg 不可用时的纯 Python 方案）。
+    edge-tts 实际上支持直接输出 wav，但接口是 mp3，所以这里做转换兜底。
+    """
+    try:
+        from pydub import AudioSegment
+        audio = AudioSegment.from_mp3(mp3_path)
+        audio.export(wav_path, format="wav")
+    except ImportError:
+        raise RuntimeError("pydub not available")
 
 
 def _speak_openai(text: str, cfg: dict, full_config: dict):
@@ -98,7 +149,7 @@ def _speak_openai(text: str, cfg: dict, full_config: dict):
             tmp_path = f.name
         resp = client.audio.speech.create(model="tts-1", voice="nova", input=text)
         resp.stream_to_file(tmp_path)
-        _play_mp3(tmp_path)
+        _play_audio(tmp_path)
         Path(tmp_path).unlink(missing_ok=True)
     except Exception as e:
         print(f"[Voice] OpenAI TTS failed: {e}")
