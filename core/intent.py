@@ -24,7 +24,8 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
 
 - archive: 把当前内容（截图 + 用户备注）归档到文档
 - answer: 看截图回答用户问题、分析屏幕内容
-- convert: 媒体格式转换（目前只支持视频→GIF，Phase 1 暂不可用，告知用户）
+- capture: 录制屏幕视频（replay buffer），用户说"录一下"、"录视频"、"帮我录"、"记录这段"、"clip"、"录N秒"等
+- convert: 媒体格式转换（目前只支持视频→GIF，需要已有视频文件）
 - chat: 纯对话，不需要操作文件系统
 
 ## needs_screenshot 判断规则
@@ -40,6 +41,7 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
 不需要截图的情况：
 - 纯聊天、问时间、问天气等明确与屏幕无关的问题
 - 用户明确说了要操作的文件路径
+- capture 动作（截图由模块内部处理）
 
 ## 输出格式（严格 JSON）
 
@@ -51,6 +53,17 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
     "tags": ["game", "design"]
   },
   "reply": "好，帮你记下来了"
+}
+
+capture 动作示例：
+{
+  "needs_screenshot": false,
+  "action": "capture",
+  "params": {
+    "duration": 10,
+    "note": "用户想录的内容备注"
+  },
+  "reply": "好，录10秒"
 }
 
 ## 注意

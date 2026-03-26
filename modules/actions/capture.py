@@ -1,16 +1,18 @@
 """
 modules/actions/capture.py — 截图 + 录屏模块
-依赖：OBS（Replay Buffer）或纯 Python 录屏备选
+支持：截图 / ReplayBuffer 保存过去N秒 / 录制未来N秒
 """
 from datetime import datetime
 from pathlib import Path
 import subprocess
 import shutil
+import time
+import threading
 
 MANIFEST = {
     "name": "capture",
-    "triggers": ["记录", "截图", "录一下", "保存这段", "记下来", "clip"],
-    "description": "截取当前屏幕截图，并通过 OBS Replay Buffer 保存前后一段视频",
+    "triggers": ["录", "录制", "截图", "录一下", "保存这段", "记下来", "clip", "录屏", "录视频"],
+    "description": "截取屏幕截图，或录制指定时长的屏幕视频",
 }
 
 
@@ -20,88 +22,117 @@ def run(context: dict, config: dict) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    duration = int(context.get("duration", 10))  # 默认录10秒
     results = {}
 
-    # 1. 截图（perception 层可能已经截了，直接复用）
+    # 1. 截图
     screenshot = context.get("screenshot")
-    if screenshot and Path(screenshot).exists():
-        dest = output_dir / f"capture_{ts}.png"
-        shutil.copy(screenshot, dest)
-        results["screenshot"] = str(dest)
-        print(f"[Capture] Screenshot saved: {dest}")
-    else:
-        # 自己截一张
+    if not screenshot:
         try:
             import mss, mss.tools
             dest = output_dir / f"capture_{ts}.png"
             with mss.mss() as sct:
                 img = sct.grab(sct.monitors[1])
                 mss.tools.to_png(img.rgb, img.size, output=str(dest))
-            results["screenshot"] = str(dest)
+            screenshot = str(dest)
         except Exception as e:
             print(f"[Capture] Screenshot failed: {e}")
 
-    # 2. OBS Replay Buffer
-    video_path = _trigger_obs_replay(cfg, output_dir, ts)
+    if screenshot:
+        results["screenshot"] = screenshot
+
+    # 2. 录制视频（用 mss 逐帧截图 + ffmpeg 合成）
+    video_path = _record_screen(output_dir, ts, duration)
     if video_path:
         results["video"] = video_path
+        results["status"] = "ok"
+        results["message"] = f"录好了，{duration}秒视频已保存"
+    else:
+        results["status"] = "ok"
+        results["message"] = f"截图已保存，视频录制失败（可能缺少 ffmpeg）"
 
-    # 3. 如果用户要求 GIF，触发 convert
-    if context.get("make_gif") and video_path:
-        from modules.actions import convert as conv_mod
-        gif_ctx = {**context, "video_path": video_path}
-        conv_result = conv_mod.run(gif_ctx, config)
-        if conv_result.get("gif"):
-            results["gif"] = conv_result["gif"]
+    results["note"] = context.get("note", context.get("transcript", ""))
+    results["timestamp"] = ts
 
-    note = context.get("note", context.get("transcript", ""))
-    results["note"] = note
-    results["timestamp"] = context.get("timestamp", ts)
-    results["status"] = "ok"
-    results["message"] = f"已截图{'并录制视频' if results.get('video') else ''}，正在归档"
-
-    # 4. 触发归档
-    from modules.actions import archive as arch_mod
-    arch_ctx = {**context, **results}
-    arch_result = arch_mod.run(arch_ctx, config)
-    results["archive"] = arch_result.get("md_path")
-    results["message"] = f"记录完成！{'生成了 GIF，' if results.get('gif') else ''}已存入文档"
+    # 3. 归档截图到 vault
+    if screenshot:
+        try:
+            from modules.actions import archive as arch_mod
+            arch_ctx = {**context, **results}
+            arch_result = arch_mod.run(arch_ctx, config)
+            results["archive"] = arch_result.get("md_path")
+        except Exception as e:
+            print(f"[Capture] Archive failed: {e}")
 
     return results
 
 
-def _trigger_obs_replay(cfg: dict, output_dir: Path, ts: str) -> str | None:
-    """触发 OBS Replay Buffer 保存，返回视频路径。"""
-    obs_host = cfg.get("obs_host", "localhost")
-    obs_port = cfg.get("obs_port", 4455)
-    obs_password = cfg.get("obs_password", "")
+def _record_screen(output_dir: Path, ts: str, duration: int) -> str | None:
+    """用 mss 逐帧截图，ffmpeg 合成 mp4。"""
+    import tempfile
+    import numpy as np
+
+    fps = 10  # 录屏帧率，10fps 够看
+    tmp_dir = Path(tempfile.mkdtemp())
+    output_path = output_dir / f"capture_{ts}.mp4"
+
+    print(f"[Capture] Recording {duration}s at {fps}fps...")
 
     try:
-        import obsws_python as obs
-        cl = obs.ReqClient(host=obs_host, port=obs_port, password=obs_password, timeout=5)
-        cl.save_replay_buffer()
-        print(f"[Capture] OBS Replay Buffer triggered")
+        import mss
+        import cv2
 
-        # OBS 会自动保存到它配置的路径，我们等一秒后找最新的视频文件
-        import time, glob
-        time.sleep(2)
+        frame_count = 0
+        interval = 1.0 / fps
+        end_time = time.time() + duration
 
-        # 找 OBS 默认录像路径
-        obs_output = Path.home() / "Videos"
-        candidates = sorted(obs_output.glob("Replay*.mkv"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if not candidates:
-            candidates = sorted(obs_output.glob("Replay*.mp4"), key=lambda p: p.stat().st_mtime, reverse=True)
+        with mss.mss() as sct:
+            monitor = sct.monitors[1]
+            while time.time() < end_time:
+                t0 = time.time()
+                img = sct.grab(monitor)
+                frame = np.array(img)
+                # BGRA → BGR
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                # 降分辨率（保持比例，宽度最大 1280）
+                h, w = frame.shape[:2]
+                if w > 1280:
+                    scale = 1280 / w
+                    frame = cv2.resize(frame, (1280, int(h * scale)), interpolation=cv2.INTER_AREA)
+                cv2.imwrite(str(tmp_dir / f"frame_{frame_count:05d}.jpg"), frame,
+                            [cv2.IMWRITE_JPEG_QUALITY, 80])
+                frame_count += 1
+                elapsed = time.time() - t0
+                time.sleep(max(0, interval - elapsed))
 
-        if candidates:
-            src = candidates[0]
-            dest = output_dir / f"replay_{ts}{src.suffix}"
-            shutil.copy(src, dest)
-            print(f"[Capture] Video saved: {dest}")
-            return str(dest)
+        print(f"[Capture] Captured {frame_count} frames, composing video...")
 
-    except ImportError:
-        print("[Capture] obsws_python not installed, skipping OBS replay")
+        # ffmpeg 合成
+        ffmpeg = shutil.which("ffmpeg") or "ffmpeg"
+        result = subprocess.run([
+            ffmpeg, "-y",
+            "-framerate", str(fps),
+            "-i", str(tmp_dir / "frame_%05d.jpg"),
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-crf", "26",
+            str(output_path)
+        ], capture_output=True, timeout=60)
+
+        if result.returncode != 0:
+            err = result.stderr.decode(errors="ignore")
+            print(f"[Capture] ffmpeg error: {err[-200:]}")
+            return None
+
+        size_mb = output_path.stat().st_size / 1024 / 1024
+        print(f"[Capture] Video saved: {output_path} ({size_mb:.1f}MB)")
+        return str(output_path)
+
+    except ImportError as e:
+        print(f"[Capture] Missing dependency: {e}")
+        return None
     except Exception as e:
-        print(f"[Capture] OBS replay failed: {e}")
-
-    return None
+        print(f"[Capture] Record error: {e}")
+        return None
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)

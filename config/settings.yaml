@@ -27,10 +27,10 @@ intent:
   api_key: ""                  # 留空则读环境变量 ARIA_INTENT_KEY
   base_url: "https://open.bigmodel.cn/api/paas/v4"
 
-  # 视觉分析：Gemini 2.0 Flash（免费，效果强）
-  vision_model: "gemini-2.0-flash"
+  # 视觉分析：Claude Sonnet via api123.icu
+  vision_model: "claude-sonnet-4-5"
   vision_api_key: ""           # 留空则读环境变量 ARIA_VISION_KEY
-  vision_base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+  vision_base_url: "https://api123.icu/v1"
 
 # ── Action 模块 ──────────────────────────────────────────────
 actions:
@@ -47,7 +47,7 @@ actions:
     enabled: true
 
   capture:
-    enabled: false
+    enabled: true
 
   # Replay Buffer（Phase 2）
   replay:
