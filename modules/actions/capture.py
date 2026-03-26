@@ -68,12 +68,11 @@ def run(context: dict, config: dict) -> dict:
 
 def _record_screen(output_dir: Path, ts: str, duration: int) -> str | None:
     """用 mss 逐帧截图，ffmpeg 合成 mp4。"""
-    import tempfile
     import numpy as np
 
     fps = 10  # 录屏帧率，10fps 够看
-    # 用固定短路径避免中文/空格/短路径问题
-    tmp_dir = Path(tempfile.gettempdir()) / f"aria_cap_{ts}"
+    # 用项目内的 tmp 目录，避免系统 temp 的短路径问题
+    tmp_dir = output_dir / f"_tmp_{ts}"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"capture_{ts}.mp4"
 
