@@ -1,0 +1,51 @@
+# ARIA 配置模板
+# 复制为 settings.yaml 并填入真实值
+# settings.yaml 已加入 .gitignore，不会上传到 git
+
+identity:
+  name: "ARIA"
+  persona:
+    personality: |
+      你是 ARIA（AI Runtime Interface Agent），一个陪伴玩家的 AI 助手。
+      性格：简洁、直接、略带个性，不用敬语，不废话。
+      回复控制在 1-2 句话，像在和朋友聊天。
+
+intent:
+  provider: "openai"  # 兼容 OpenAI 格式
+
+  # 意图解析模型（推荐 GLM-4-Flash，免费）
+  model: "glm-4-flash"
+  api_key: ""          # 填入智谱 key，或设环境变量 ARIA_INTENT_KEY
+  base_url: "https://open.bigmodel.cn/api/paas/v4"
+
+  # 视觉分析模型（推荐 GLM-4V-Flash，免费，支持图片）
+  vision_model: "glm-4v-flash"
+  vision_api_key: ""   # 留空则和 api_key 相同
+  vision_base_url: "https://open.bigmodel.cn/api/paas/v4"
+
+  # 视觉优化参数
+  vision_optimization:
+    max_width: 1280
+    max_height: 720
+    jpeg_quality: 75
+
+speech:
+  # 语音识别（Whisper）
+  whisper_model: "base"  # tiny / base / small / medium
+  hotkey: "ctrl+`"       # 按住说话
+
+  # TTS（edge-tts）
+  tts_voice: "zh-CN-XiaoxiaoNeural"  # 中文女声
+  # 其他可选：zh-CN-YunxiNeural（男声）、zh-CN-XiaoyiNeural（女声）
+
+actions:
+  capture:
+    enabled: true
+    output_dir: "data/captures"
+
+  archive:
+    enabled: true
+    vault_dir: "data/vault"
+
+  convert:
+    enabled: false  # GIF 转换，需要 ffmpeg

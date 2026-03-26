@@ -63,6 +63,9 @@ class Perception:
                 mic_idx = None
 
             print("[Perception] Recording... (speak now)")
+            from core.bus import bus
+            bus.publish("aria.listening", None)
+            bus.publish("aria.state_change", {"state": "listening"})
             frames = []
             silence_count = 0
 

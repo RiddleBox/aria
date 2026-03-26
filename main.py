@@ -20,6 +20,7 @@ sys.path.insert(0, str(ROOT))
 from core.perception import Perception
 from core.intent import parse_intent
 from core.dispatcher import Dispatcher
+from core.bus import bus
 from modules.identity.persona import Persona
 from modules.identity.voice import speak
 
@@ -47,28 +48,38 @@ def main():
     def on_command(context: dict):
         transcript = context["transcript"]
         print(f"\n[ARIA] ▶ {transcript!r}")
+        bus.publish("aria.transcribed", {"transcript": transcript})
 
         # 1. 解析意图
+        bus.publish("aria.state_change", {"state": "thinking"})
         system_prompt = persona.get_system_prompt()
         intent = parse_intent(transcript, config, system_prompt)
+        bus.publish("aria.intent_parsed", {"action": intent.get("action"), "params": intent.get("params", {})})
 
         # 2. 需要截图？现在截
         if intent.get("needs_screenshot"):
             print("[ARIA] Taking screenshot...")
             screenshot = perception.take_screenshot()
             context["screenshot"] = screenshot
+            bus.publish("aria.screenshot_taken", {"path": screenshot})
 
         # 3. 把 intent 的 reply 和 params 合并进 context
         context["reply"] = intent.get("reply", "")
+        context["system_prompt"] = system_prompt  # chat 模块用
         context.update(intent.get("params", {}))
 
         # 4. 执行模块
+        bus.publish("aria.action_start", {"action": intent.get("action"), "context": context})
         result = dispatcher.dispatch(intent, context)
+        bus.publish("aria.action_complete", {"action": intent.get("action"), "result": result})
         print(f"[ARIA] Result: status={result.get('status')} msg={result.get('message', '')[:60]}")
 
         # 5. 语音回应
+        bus.publish("aria.state_change", {"state": "speaking"})
         reply_text = result.get("message") or intent.get("reply") or "好的"
         speak(reply_text, config)
+        bus.publish("aria.speaking_done", None)
+        bus.publish("aria.state_change", {"state": "idle"})
 
         # 6. 记录交互
         persona.log_interaction(transcript, intent.get("action", "?"), reply_text)
@@ -79,6 +90,7 @@ def main():
 
     def handle_exit(sig=None, frame=None):
         print("\n[ARIA] Goodbye.")
+        bus.publish("aria.state_change", {"state": "idle"})
         perception.stop()
         sys.exit(0)
 
