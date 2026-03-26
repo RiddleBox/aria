@@ -31,8 +31,16 @@ intent:
 
 speech:
   # 语音识别（Whisper）
-  whisper_model: "base"  # tiny / base / small / medium
-  hotkey: "ctrl+`"       # 按住说话
+  whisper_model: "base"      # tiny / base / small / medium（越大越准，越慢）
+  hotkey: "ctrl+`"           # 按住说话
+
+  # 初始提示词：帮助 Whisper 识别你常用的词
+  # 按你的使用场景修改，加入你常说的词语，识别准确率会明显提升
+  # 例如游戏场景可以加：英雄、技能、大招、倒计时、击杀等
+  whisper_initial_prompt: "这是一段中文语音指令，用于办公和日常辅助场景。内容可能包含：截图、录屏、分析、提醒、番茄钟、帮我看、归档、ARIA、记录、总结、查一下等词语。"
+
+  # 背景噪音过滤（如麦克风环境嘈杂可开启，但可能误过滤人声，建议先关闭）
+  whisper_vad_filter: false
 
   # TTS（edge-tts）
   tts_voice: "zh-CN-XiaoxiaoNeural"  # 中文女声
