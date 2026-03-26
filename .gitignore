@@ -39,3 +39,5 @@ config/secrets.yaml
 .vscode/
 .idea/
 *.swp
+
+config/settings.yaml
