@@ -38,3 +38,7 @@ edge-tts>=6.1.0
 # Windows 用系统命令播放，不需要额外库
 # 如果播放有问题可以 pip install playsound==1.2.2
 pydub>=0.25.1          # mp3→wav 转换（TTS播放用）
+
+# 窗口感知（当前前台窗口 + 进程识别）
+pywin32>=306           # Windows 前台窗口获取
+psutil>=5.9.0          # 进程名获取
