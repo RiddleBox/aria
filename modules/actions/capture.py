@@ -53,11 +53,28 @@ def run(context: dict, config: dict) -> dict:
     results["note"] = context.get("note", context.get("transcript", ""))
     results["timestamp"] = ts
 
-    # 3. 归档截图到 vault
+    # 3. 归档截图到 vault（带游戏标签）
     if screenshot:
         try:
             from modules.actions import archive as arch_mod
-            arch_ctx = {**context, **results}
+
+            # 构建标签：基础标签 + 游戏名（如果在游戏中）
+            tags = ["aria", "capture"]
+            game_name = context.get("game_name")
+            if game_name:
+                # 游戏名转成 tag 格式：空格换连字符，小写
+                game_tag = game_name.lower().replace(" ", "-")
+                tags.append(f"game/{game_tag}")
+                tags.append("gaming")
+
+            # 场景注入到 note
+            note = context.get("note", context.get("transcript", ""))
+            if game_name and not note:
+                note = f"游戏截图 · {game_name}"
+            elif game_name and note:
+                note = f"[{game_name}] {note}"
+
+            arch_ctx = {**context, **results, "tags": tags, "note": note}
             arch_result = arch_mod.run(arch_ctx, config)
             results["archive"] = arch_result.get("md_path")
         except Exception as e:

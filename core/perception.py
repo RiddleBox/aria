@@ -224,11 +224,19 @@ class Perception:
             print("[Perception] Empty transcription, skipping")
             return
 
+        # 注入当前窗口上下文
+        try:
+            from core.window_context import get_window_context
+            win_ctx = get_window_context()
+        except Exception:
+            win_ctx = {}
+
         context = {
             "transcript": text,
             "timestamp": datetime.now().isoformat(),
             "audio_path": audio_path,
             "screenshot": None,
+            **win_ctx,   # window_title, process_name, is_game, game_name, scene
         }
         self.on_command(context)
 
