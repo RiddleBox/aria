@@ -79,10 +79,9 @@ memory.get_summary()           # 最近在干什么（摘要）
 
 | 功能 | 说明 | 优先级 |
 |---|---|---|
-| `remind` 模块 | 语音设提醒，Windows 气泡通知 | 高 |
-| `search` 模块 | 搜 Obsidian vault 历史记录 | 中 |
 | `browse` 模块 | 帮查网页/攻略 | 中 |
 | facts 自动提取 | 对话中自动识别用户信息存入 facts | 中 |
+| **语音/文字内容分离** | `message`（语音）+ `display`（文字气泡，带来源）分两个字段，Phase 4 Godot 接入时实现，改动极小 | Phase 4 |
 | memory HTTP API | 暴露给 Godot 的读取接口 | Phase 4 时做 |
 
 ---
