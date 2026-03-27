@@ -21,6 +21,7 @@ from core.perception import Perception
 from core.intent import parse_intent
 from core.dispatcher import Dispatcher
 from core.bus import bus
+from core.memory import get_memory
 from modules.identity.persona import Persona
 from modules.identity.voice import speak
 
@@ -40,6 +41,7 @@ def main():
     config = load_config()
     dispatcher = Dispatcher(config)
     persona = Persona(config)
+    memory = get_memory(str(ROOT / "data"))
 
     print(f"[ARIA] Modules: {dispatcher.list_modules()}")
 
@@ -50,9 +52,12 @@ def main():
         print(f"\n[ARIA] ▶ {transcript!r}")
         bus.publish("aria.transcribed", {"transcript": transcript})
 
-        # 1. 解析意图
+        # 1. 解析意图（带记忆上下文）
         bus.publish("aria.state_change", {"state": "thinking"})
         system_prompt = persona.get_system_prompt()
+        memory_ctx = memory.build_context_prompt(n_interactions=6)
+        if memory_ctx:
+            system_prompt = system_prompt + "\n\n" + memory_ctx
         intent = parse_intent(transcript, config, system_prompt)
         bus.publish("aria.intent_parsed", {"action": intent.get("action"), "params": intent.get("params", {})})
 
@@ -81,8 +86,24 @@ def main():
         bus.publish("aria.speaking_done", None)
         bus.publish("aria.state_change", {"state": "idle"})
 
-        # 6. 记录交互
-        persona.log_interaction(transcript, intent.get("action", "?"), reply_text)
+        # 6. 写入记忆
+        memory.add_interaction(transcript, intent.get("action", "?"), reply_text, context)
+
+        # 重要事件单独记到 events（供 Godot 读取）
+        action = intent.get("action", "")
+        if action in ("archive", "quick_note"):
+            memory.add_event("note", transcript,
+                             metadata={"file": result.get("md_path") or result.get("note_file")},
+                             context=context)
+        elif action == "capture":
+            memory.add_event("screenshot", transcript,
+                             metadata={"file": result.get("archive") or result.get("video")},
+                             context=context)
+        elif action == "remind":
+            memory.add_event("reminder", transcript, context=context)
+
+        # 保留旧的 persona log（兼容）
+        persona.log_interaction(transcript, action, reply_text)
 
     # ── 启动感知层 ────────────────────────────────────────────
 

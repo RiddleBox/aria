@@ -60,6 +60,18 @@ def run(context: dict, config: dict) -> dict:
         f.write(entry)
 
     print(f"[QuickNote] Saved: {note_file} → {entry.strip()}")
+
+    # 写入 memory events（供 Godot 读取）
+    try:
+        from core.memory import get_memory
+        get_memory().add_event(
+            "note", content,
+            metadata={"file": str(note_file), "scene_tag": scene_tag.strip()},
+            context=context,
+        )
+    except Exception as e:
+        print(f"[QuickNote] Memory write error: {e}")
+
     return {
         "status": "ok",
         "message": f"记好了",
