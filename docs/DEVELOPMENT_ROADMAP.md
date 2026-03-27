@@ -1,6 +1,6 @@
 # ARIA 后续发展规划
 
-> 版本：v1.3 · 2026-03-26
+> 版本：v1.4 · 2026-03-27
 > 基于第一性原理 · 奥卡姆剃刀 · 实际使用场景确认
 
 ---
@@ -11,94 +11,115 @@
 - **不造轮子**：每个能力找最成熟的现有方案接入，ARIA 只做胶水层
 - **模块热插拔**：需要什么功能时，一个新文件加进来，核心不动
 - **接口先行**：Godot 形象层的接口现在就留好，到时直接对接
+- **记忆/表现分离**：ARIA 存事实，Godot 用性格决定怎么表现
 
 ---
 
-## Phase 1.5 · 收尾（当前）
-
-**目标：让 Phase 1 真正可用**
+## Phase 1.5 · 收尾 ✅
 
 - [x] 集成测试完成（语音 → 视觉处理 → AI响应 端到端跑通）✅ 2026-03-25
 - [x] 视觉优化完成（JPEG压缩 + 1080p降采样，token节省约80%）✅ 2026-03-25
-- [x] 游戏场景热键测试（`Ctrl+\`` 是否被游戏拦截）✅ 2026-03-26
 - [x] 视觉模型切换（Gemini 配额耗尽 → GLM-4V-Flash）✅ 2026-03-26
 - [x] 语音播放修复（优先用 winmm MCI，兼容 Python 3.14）✅ 2026-03-26
 - [x] capture action 上线（意图识别 + 截图 + 动态录制时长）✅ 2026-03-26
-- [ ] 录屏视频合成（ffmpeg 调用失败，frames 截到了但合成报错）← **待排查**
+- [x] bus.py 事件格式确认，Godot 对接接口就绪 ✅ 2026-03-27
+- [ ] 录屏视频合成（ffmpeg 调用失败，frames 截到了但合成报错）← 暂搁置
 
 ---
 
-## Phase 2 · 游戏录屏
+## Phase 2 · 游戏录屏 ⏸ 暂搁置
 
-**目标：说"帮我记刚才那段" → 保存过去 N 秒游戏画面**
-
-- Replay Buffer 代码已完成（`modules/actions/replay_buffer.py`）
-- 待本地验证 d3dshot 能否捕获游戏全屏
-- 时间窗口：**15 秒**（游戏场景够用，文件不会太大）
-- 顺带实现 `convert` 模块（视频 → GIF，ffmpeg 一条命令）
-- 文档/工作场景：直接截屏，不需要回溯
+录屏（replay_buffer）存在兼容性问题，暂不推进。
+等有实际需求或找到更稳定方案再回来。
 
 ---
 
-## Phase 3 · 模块扩展框架
+## Phase 3 · 桌宠核心功能 ← 当前重点
 
-**目标：建立"30 分钟接入任何新能力"的标准**
+**目标：让 ARIA 真正像一个陪伴玩家的桌宠**
 
-每个模块只需满足接口：
-```python
-MANIFEST = { "name": "xxx", "triggers": [...], "description": "..." }
-def run(context: dict, config: dict) -> dict: ...
+### 3.1 能力发现 ✅ 2026-03-27
+- [x] `core/skill_finder.py`：找不到模块时搜 PyPI 推荐，零 token 消耗
+- [x] `core/dispatcher.py`：fallback 改为调 skill_finder，返回推荐而非报错
+
+### 3.2 窗口感知 ✅ 2026-03-27
+- [x] `core/window_context.py`：获取前台窗口/进程，识别游戏场景
+- [x] `core/perception.py`：每次指令自动注入 window_context
+- [x] 内置 30+ 款游戏进程名映射，窗口标题关键词兜底
+- [x] 依赖：`pip install pywin32 psutil`
+
+### 3.3 快速记录 ✅ 2026-03-27
+- [x] `modules/actions/quick_note.py`：语音一句话 → 追加写入今日笔记
+- [x] 游戏中记录自动打 `🎮[游戏名]` 标签，工作场景打 `💼[窗口名]`
+
+### 3.4 游戏截图标签 ✅ 2026-03-27
+- [x] `modules/actions/capture.py`：截图归档自动带游戏名标签
+- [x] Obsidian tags 自动加 `game/游戏名` + `gaming`
+
+### 3.5 记忆系统 ✅ 2026-03-27
+- [x] `core/memory.py`：四层记忆结构，全局单例
+- [x] `main.py`：每次交互后写 memory，重要动作写 events
+
+**记忆四层结构：**
 ```
-放进 `modules/actions/` 自动被 Dispatcher 加载，零侵入核心。
+interactions[]  近期对话流水（50条滚动，意图解析上下文用）
+facts{}         用户偏好/信息（用户自己说的）
+events[]        重要事件精华（截图/记录/提醒，Godot 读这里）
+summary         自动压缩摘要（每20条触发）
+```
 
-**候选模块（按需接入，不提前实现）：**
+**Godot 读取接口：**
+```python
+memory.get_recent_events(n)   # 最近发生了什么
+memory.get_facts()             # 用户是谁、有什么偏好
+memory.get_summary()           # 最近在干什么（摘要）
+```
 
-| 模块 | 接入方案 | 触发词示例 |
+### 3.6 待实现
+
+| 功能 | 说明 | 优先级 |
 |---|---|---|
-| `browse` | `playwright` 或 `requests+readability` | "帮我查一下 XX" |
-| `remind` | `schedule` 库 + Windows 通知 | "提醒我 XX 点做 XX" |
-| `search` | 本地 `ripgrep` 搜 vault | "找一下我之前记的 XX" |
-| `read` | `pymupdf` 读 PDF / `readability` 读网页 | "读一下这篇" |
+| `remind` 模块 | 语音设提醒，Windows 气泡通知 | 高 |
+| `search` 模块 | 搜 Obsidian vault 历史记录 | 中 |
+| `browse` 模块 | 帮查网页/攻略 | 中 |
+| facts 自动提取 | 对话中自动识别用户信息存入 facts | 中 |
+| memory HTTP API | 暴露给 Godot 的读取接口 | Phase 4 时做 |
 
 ---
 
 ## Phase 4 · Godot 对接接口
 
-**ARIA 只发事件，不关心 Godot 怎么渲染**
+**ARIA 只发事件 + 提供记忆读取，不关心 Godot 怎么渲染**
 
-`core/bus.py` 每次动作完成后广播：
+### 事件总线（已就绪）
+`core/bus.py` 每次动作完成后广播，Godot 通过 WebSocket 订阅：
 ```python
-{
-  "event": "aria.action_complete",
-  "action": "archive",        # 做了什么
-  "reply": "记好了",           # 语音回复内容
-  "timestamp": "...",
-  "data": { ... }             # 可选：截图路径、归档路径等
-}
+aria.action_complete  → {"action": str, "reply": str, "data": {...}}
+aria.state_change     → {"state": "idle|listening|thinking|speaking|working"}
+aria.speaking         → {"text": str}
+aria.skill_not_found  → {"action": str, "suggestions": [...]}
 ```
-Godot 通过 WebSocket 或本地 socket 监听，驱动角色表情/文字反馈。
-Godot 形象模块由用户主导设计，ARIA 只负责留好接口。
+
+### 记忆读取（Phase 4 时暴露 HTTP/WebSocket 接口）
+```python
+# Godot 拿这些数据，用角色性格决定怎么表现
+memory.get_recent_events(n)   # 最近发生了什么
+memory.get_facts()             # 用户偏好
+memory.get_summary()           # 近期摘要
+```
+
+**职责分工：**
+- ARIA：存事实（发生了什么、用户说了什么、用户喜欢什么）
+- Godot：表现层（用什么语气、什么表情、什么时候主动说话）
 
 ---
 
 ## Phase 5 · 远期（按需）
 
-ARIA 本质是意图路由器 + 工具集。未来能力扩展方向：
-- 技能市场化：模块可从外部加载，类似插件系统
 - 唤醒词：常驻监听，手不在键盘时触发
-- 本地轻量视觉感知：主动检测屏幕变化（Phase 2 被动→主动）
+- 本地轻量视觉感知：主动检测屏幕变化
+- 技能市场化：模块从外部加载，类似插件系统
 - 硬件接入：智能眼镜等外部感知设备
-
----
-
-## 执行节奏
-
-```
-现在        → Phase 1.5 收尾（热键测试 + 接口确认）
-本地验证后  → Phase 2（录屏接入主流程）
-用一段时间  → 看实际缺什么模块，按需接入 Phase 3
-Godot 启动时 → Phase 4 接口对齐（用户主导，ARIA 配合）
-```
 
 ---
 
@@ -106,8 +127,10 @@ Godot 启动时 → Phase 4 接口对齐（用户主导，ARIA 配合）
 
 | 决策 | 结论 |
 |---|---|
-| 录屏回溯时长 | 15 秒（游戏场景），文档场景不需要回溯直接截屏 |
+| 录屏回溯 | 暂搁置，兼容性问题未解决 |
 | 模块扩展方式 | 热插拔，放入 `modules/actions/` 自动加载 |
-| Godot 对接 | ARIA 发事件，Godot 监听渲染，完全解耦 |
-| 形象模块 | 用户用 Claude Game Studio 自行设计，ARIA 不参与 |
+| Godot 对接 | ARIA 发事件 + 提供记忆接口，Godot 监听渲染，完全解耦 |
+| 记忆/性格分离 | ARIA 存事实，Godot 用性格决定表现方式 |
+| 能力发现 | 找不到模块时推荐 PyPI 资源，用户手动安装，零 token 消耗 |
+| 形象模块 | Godot 项目那边负责，ARIA 留好接口 |
 | 能力扩展哲学 | 需要时接入成熟方案，不提前实现，不造轮子 |
