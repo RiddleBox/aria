@@ -1,11 +1,13 @@
 """
 core/dispatcher.py — 调度器 (Phase 1)
 根据 intent 路由到对应模块。
+找不到模块时调用 skill_finder，推荐可能满足需求的外部资源。
 """
 import importlib.util
 from pathlib import Path
 from datetime import datetime
 from core.bus import bus
+from core.skill_finder import find as skill_find
 
 
 class Dispatcher:
@@ -34,7 +36,19 @@ class Dispatcher:
         action = intent.get("action", "chat")
         module = self.modules.get(action)
         if not module:
-            return {"status": "error", "message": f"没有找到模块: {action}"}
+            # 找不到模块 → 调用 skill_finder 推荐外部资源
+            transcript = context.get("transcript", "")
+            finder_result = skill_find(action, transcript)
+            bus.publish("aria.skill_not_found", {
+                "action": action,
+                "suggestions": finder_result.get("suggestions", []),
+            })
+            return {
+                "status": "skill_not_found",
+                "action": action,
+                "message": finder_result["message"],
+                "suggestions": finder_result.get("suggestions", []),
+            }
         try:
             merged = {**context, **intent.get("params", {})}
             result = module.run(merged, self.config)

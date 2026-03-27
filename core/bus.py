@@ -22,7 +22,8 @@ core/bus.py — 事件总线
 - `aria.speaking_done`    ARIA 说完了              payload: None
 - `aria.screenshot_taken` 截图完成                payload: {"path": str}
 
-### 状态事件（供 Godot 形象层订阅）
+### 能力发现事件
+- `aria.skill_not_found`  找不到模块，已推荐外部资源  payload: {"action": str, "suggestions": list}
 - `aria.state_change`     ARIA 状态变化            payload: {"state": str}
                           state 可选值：
                             "idle"       — 待机
