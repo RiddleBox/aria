@@ -27,6 +27,8 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
 - capture: 录制屏幕视频，用户说"录一下"、"录视频"、"帮我录"、"记录这段"、"clip"、"录N秒"等
 - convert: 媒体格式转换（视频→GIF）
 - remind: 定时提醒或番茄钟，用户说"提醒我X分钟后"、"番茄钟"、"X分钟后叫我"、"定时X分钟"等
+- quick_note: 快速记录，用户说"记一下"、"帮我记"、"备忘"等，不需要截图
+- search: 搜索记忆库和笔记，用户说"找一下"、"搜一下"、"我之前说过"、"找找我记过的"等
 - chat: 纯对话，不需要操作文件系统
 
 ## needs_screenshot 判断规则
@@ -137,7 +139,7 @@ def parse_intent(transcript: str, config: dict, persona_prompt: str = "") -> dic
         result = _keyword_fallback(transcript)
 
     # 兜底：action 不在已知列表里，降级到 chat
-    known_actions = {"archive", "answer", "capture", "convert", "remind", "chat"}
+    known_actions = {"archive", "answer", "capture", "convert", "remind", "quick_note", "search", "chat"}
     if result.get("action") not in known_actions:
         print(f"[Intent] Unknown action '{result.get('action')}', fallback to chat")
         result["action"] = "chat"
@@ -200,6 +202,20 @@ def _parse_local(transcript: str, config: dict) -> dict:
 def _keyword_fallback(transcript: str) -> dict:
     """LLM 不可用时的关键词兜底。"""
     t = transcript.lower()
+    if any(k in t for k in ["找一下", "搜一下", "找找", "搜索", "我之前", "找我"]):
+        return {
+            "needs_screenshot": False,
+            "action": "search",
+            "params": {},
+            "reply": "找找看",
+        }
+    if any(k in t for k in ["记一下", "帮我记", "备忘", "记住", "记下来"]):
+        return {
+            "needs_screenshot": False,
+            "action": "quick_note",
+            "params": {},
+            "reply": "记好了",
+        }
     if any(k in t for k in ["记", "保存", "存", "截图", "记录", "归档"]):
         return {
             "needs_screenshot": True,
