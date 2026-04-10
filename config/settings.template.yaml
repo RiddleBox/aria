@@ -32,6 +32,7 @@ intent:
 speech:
   # 语音识别（Whisper）
   whisper_model: "base"      # tiny / base / small / medium（越大越准，越慢）
+  whisper_beam_size: 2       # 解码 beam 数：2=速度优先（推荐），5=准确率优先
   hotkey: "ctrl+`"           # 按住说话
 
   # 初始提示词：帮助 Whisper 识别你常用的词

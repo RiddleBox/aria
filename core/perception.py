@@ -23,7 +23,7 @@ _VAD_CHUNK_SAMPLES = int(_VAD_SAMPLE_RATE * _VAD_CHUNK_MS / 1000)  # = 1536
 
 # 触发/停止阈值（连续多少 chunk 为人声才算"开始说话"，连续多少 chunk 安静才算"说完"）
 _VAD_START_CHUNKS  = 2     # 连续 2 chunk（~192ms）有人声 → 开始录
-_VAD_STOP_CHUNKS   = 12    # 连续 12 chunk（~1.15s）无人声 → 结束录（比旧 1.5s 更准）
+_VAD_STOP_CHUNKS   = 6     # 连续 6 chunk（~576ms）无人声 → 结束录（自然停顿感知边界）
 _VAD_THRESHOLD     = 0.4   # VAD 置信度阈值（0~1），越高越严格
 
 
@@ -50,6 +50,7 @@ class Perception:
     def transcribe(self, audio_path: str) -> str:
         model = self._load_whisper()
         lang = self.config.get("whisper_language", "zh")
+        beam_size = self.config.get("whisper_beam_size", 2)  # 默认 2，速度优先；改 5 可提升准确率
         initial_prompt = self.config.get(
             "whisper_initial_prompt",
             "这是一段中文语音指令，用于办公和日常辅助场景。"
@@ -59,7 +60,7 @@ class Perception:
         segments, _ = model.transcribe(
             audio_path,
             language=lang,
-            beam_size=5,
+            beam_size=beam_size,
             vad_filter=False,
             initial_prompt=initial_prompt,
         )
