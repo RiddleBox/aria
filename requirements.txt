@@ -49,3 +49,8 @@ psutil>=5.9.0          # 进程名获取
 # browse 模块（网页搜索）
 # pip install duckduckgo-search
 # duckduckgo-search>=6.0.0
+
+# VAD 精准断句（perception.py，Phase 3.7）
+# pip install silero-vad
+# 依赖 torch（已在下方列出），模型 1.8MB，MIT 协议
+silero-vad>=5.0
