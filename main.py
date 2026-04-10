@@ -89,6 +89,9 @@ def main():
         # 6. 写入记忆
         memory.add_interaction(transcript, intent.get("action", "?"), reply_text, context)
 
+        # 自动提取 facts（零 token，不阻塞）
+        memory.auto_extract_facts(transcript)
+
         # 重要事件单独记到 events（供 Godot 读取）
         action = intent.get("action", "")
         if action in ("archive", "quick_note"):

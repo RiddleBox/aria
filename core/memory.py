@@ -213,6 +213,41 @@ class Memory:
 
         return "\n\n".join(parts)
 
+    # ── facts 自动提取 ────────────────────────────────────────
+
+    def auto_extract_facts(self, transcript: str) -> dict:
+        """
+        从用户说的一句话里自动提取 facts 并写入。
+        返回本次新写入的 {key: value}（空 dict 表示没有提取到）。
+
+        调用时机：main.py 每次交互后调用（写 interaction 之后）。
+        零 token，不阻塞主流程。
+        """
+        new_facts = extract_facts(transcript)
+        if not new_facts:
+            return {}
+
+        written = {}
+        for key, value in new_facts.items():
+            # preferences 类累积追加（不覆盖），其余覆盖
+            if key == "preferences":
+                existing = self.get_fact("preferences") or []
+                if isinstance(existing, str):
+                    existing = [existing]
+                if value not in existing:
+                    existing.append(value)
+                    self.set_fact("preferences", existing)
+                    written[key] = value
+            else:
+                old = self.get_fact(key)
+                if old != value:
+                    self.set_fact(key, value)
+                    written[key] = value
+
+        if written:
+            print(f"[Memory] Auto facts: {written}")
+        return written
+
     def _try_compress(self):
         """
         将旧的 interactions 压缩成 summary（简单版：取最近几条关键内容）。
@@ -243,6 +278,75 @@ def _gen_id() -> str:
     """生成简短唯一 ID。"""
     import hashlib, time
     return hashlib.md5(str(time.time()).encode()).hexdigest()[:8]
+
+
+# ── Facts 自动提取（规则层）────────────────────────────────────────────────────
+
+import re
+
+# 规则表：(pattern, fact_key, value_group_index)
+# value_group_index=0 → 用捕获组1的内容；=-1 → 固定值（见下方 FIXED_FACTS）
+_FACT_RULES: list[tuple] = [
+    # 姓名：只匹配「我叫/我名字是/我名字叫」，不包含「叫我」（那个走 FIXED_FACT_RULES）
+    (r"我(叫|名字是|名字叫)\s*([^\s，。？！,\.]{1,8})", "name", 2),
+
+    # 偏好语言
+    (r"(用|说|讲)\s*(粤语|广东话|普通话|英文|英语|日语|日文)", "preferred_language", 2),
+    (r"我(比较)?喜欢(说|用|讲)\s*(粤语|广东话|普通话|英文|英语|日语|日文)", "preferred_language", 3),
+
+    # 游戏偏好：「在玩」后面不能含「在」「住」「位于」等地点词
+    (r"我(最近|现在|正在)?在?玩的?\s*([^\s，。？！,\.在住位于]{2,10}?)(?:这个|这款)?(?:游戏)?(?:\s|$|[，。？！])", "current_game", 2),
+    (r"我喜欢玩\s*([^\s，。？！,\.]{2,10})", "fav_game", 1),
+
+    # 职业 / 身份
+    (r"我是(一?(名|个))?\s*(程序员|开发者|设计师|游戏策划|学生|上班族|自由职业者|产品经理|运营|美术|音效师)", "occupation", 3),
+
+    # 地区：只匹配「住在/居住在/位于」，避免被「在玩」误触发
+    (r"我(住在|居住在|位于)\s*([^\s，。？！,\.]{2,6})", "location", 2),
+
+    # 喜好/厌恶（通用，排除游戏动词）
+    (r"我(不|很|非常|挺|比较)?(喜欢|讨厌|痛恨|爱|害怕)\s*(?!玩)([^\s，。？！,\.]{2,15})", "preferences", 0),
+]
+
+# 固定值规则：命中后直接写 key=value
+_FIXED_FACT_RULES: list[tuple] = [
+    (r"(不要|别)\s*(说|用)\s*敬语", "no_honorifics", True),
+    (r"(叫我|称呼我)\s*(哥|姐|大哥|老哥|老姐|老板|老大)", "address_style", "兄弟称呼"),
+]
+
+
+def extract_facts(transcript: str) -> dict[str, str]:
+    """
+    从一句话里用规则提取 facts，返回 {key: value} 字典。
+    零 token 消耗，高置信度优先。
+    可能返回空 dict（没匹配到任何规则）。
+    """
+    found: dict[str, str] = {}
+
+    # 固定值规则
+    for pattern, key, value in _FIXED_FACT_RULES:
+        if re.search(pattern, transcript):
+            found[key] = value
+
+    # 捕获组规则
+    for pattern, key, group_idx in _FACT_RULES:
+        m = re.search(pattern, transcript)
+        if not m:
+            continue
+
+        if group_idx == 0:
+            # preferences 类：用整个匹配串作为值
+            value = m.group(0).strip()
+        else:
+            try:
+                value = m.group(group_idx)
+            except IndexError:
+                continue
+
+        if value and value.strip():
+            found[key] = value.strip()
+
+    return found
 
 
 # 全局单例（和 bus 一样）
