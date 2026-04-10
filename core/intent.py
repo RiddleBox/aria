@@ -28,7 +28,8 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
 - convert: 媒体格式转换（视频→GIF）
 - remind: 定时提醒或番茄钟，用户说"提醒我X分钟后"、"番茄钟"、"X分钟后叫我"、"定时X分钟"等
 - quick_note: 快速记录，用户说"记一下"、"帮我记"、"备忘"等，不需要截图
-- search: 搜索记忆库和笔记，用户说"找一下"、"搜一下"、"我之前说过"、"找找我记过的"等
+- search: 搜索【本地记忆库和笔记】，用户说"找一下"、"搜一下"、"我之前说过"、"找找我记过的"等，关键是"之前/记过"等回溯词
+- browse: 搜索【互联网】，用户说"帮我查"、"帮我搜"、"查一下"、"上网查"、"搜一下网页"、"browse"等，关键是查新信息/攻略/资料
 - chat: 纯对话，不需要操作文件系统
 
 ## needs_screenshot 判断规则
@@ -54,6 +55,8 @@ SYSTEM_PROMPT = """你是 ARIA 的意图解析器。
 - "看看这个" 后面没有问题 → archive，不是 answer
 - "你好" / "在吗" / "嗯" → chat，不要截图
 - "提醒我" / "定时" → remind，不需要截图
+- "我之前记过什么" / "找找我说的" → search（搜本地），不是 browse
+- "帮我查一下这个 Boss 怎么打" / "查一下天气" → browse（搜网页），不是 search
 - 听不懂或过于简短（如"嗯"、"啊"、"哦"）→ chat，reply 用自然回应
 
 ## 输出格式（严格 JSON）
@@ -139,7 +142,7 @@ def parse_intent(transcript: str, config: dict, persona_prompt: str = "") -> dic
         result = _keyword_fallback(transcript)
 
     # 兜底：action 不在已知列表里，降级到 chat
-    known_actions = {"archive", "answer", "capture", "convert", "remind", "quick_note", "search", "chat"}
+    known_actions = {"archive", "answer", "capture", "convert", "remind", "quick_note", "search", "browse", "chat"}
     if result.get("action") not in known_actions:
         print(f"[Intent] Unknown action '{result.get('action')}', fallback to chat")
         result["action"] = "chat"
@@ -202,12 +205,19 @@ def _parse_local(transcript: str, config: dict) -> dict:
 def _keyword_fallback(transcript: str) -> dict:
     """LLM 不可用时的关键词兜底。"""
     t = transcript.lower()
-    if any(k in t for k in ["找一下", "搜一下", "找找", "搜索", "我之前", "找我"]):
+    if any(k in t for k in ["找一下", "搜一下", "找找", "我之前", "找我"]):
         return {
             "needs_screenshot": False,
             "action": "search",
             "params": {},
             "reply": "找找看",
+        }
+    if any(k in t for k in ["帮我查", "帮我搜", "查一下", "上网查", "上网搜", "查查", "搜网页", "browse"]):
+        return {
+            "needs_screenshot": False,
+            "action": "browse",
+            "params": {},
+            "reply": "查一下",
         }
     if any(k in t for k in ["记一下", "帮我记", "备忘", "记住", "记下来"]):
         return {

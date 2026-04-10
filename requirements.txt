@@ -42,3 +42,10 @@ pydub>=0.25.1          # mp3→wav 转换（TTS播放用）
 # 窗口感知（当前前台窗口 + 进程识别）
 pywin32>=306           # Windows 前台窗口获取
 psutil>=5.9.0          # 进程名获取
+
+# ── 可选模块依赖 ──────────────────────────────────────────────
+# 以下依赖按需安装，缺失时对应模块会给出友好提示，不影响 ARIA 启动
+
+# browse 模块（网页搜索）
+# pip install duckduckgo-search
+# duckduckgo-search>=6.0.0
