@@ -4,26 +4,18 @@ modules/actions/browse.py — 网页搜索模块
 ## 功能
 用户说「帮我查/搜一下 XXX」→ 搜索网页 → LLM 总结 → 语音播报
 
-## 降级链
-1. duckduckgo_search（免费，无需 API key，返回结构化摘要）
-2. LLM 总结摘要（GLM/Gemini，消耗极低）
-   └─ LLM 不可用时 → 直接播报第一条摘要
-3. duckduckgo_search 不可用 → 提示用户安装 + 给出搜索链接
+## 降级链（运行时动态探测，不硬编码）
+① ddgs 搜索 + LLM 总结（ddgs 包可用时）
+② GLM 联网搜索（ddgs 不可用 / 无结果时，需要 ARIA_INTENT_KEY）
+③ 兜底：返回 DuckDuckGo 搜索链接，让用户自己查
 
 ## 模块化设计
 - 自包含，不依赖其他 action 模块
 - 依赖软检测：未安装时给出友好提示，不影响 ARIA 启动
 - 移除方式：直接删除此文件，ARIA 自动感知模块消失
 
-## 安装依赖
-    pip install duckduckgo-search
-
-## 触发词示例
-    "帮我查一下艾尔登法环远古龙打法"
-    "搜一下 Python asyncio 怎么用"
-    "查一下明天天气"
-    "帮我找找这个 Boss 怎么打"
-    "browse 深度优先搜索"
+## 安装依赖（可选，有降级链）
+    pip install ddgs
 """
 
 import re
@@ -38,7 +30,7 @@ MANIFEST = {
         "browse", "google", "搜网页",
     ],
     "description": "搜索互联网，用 LLM 总结结果后语音播报",
-    "requires": ["duckduckgo-search"],  # 软依赖声明，仅用于提示
+    "requires": ["ddgs"],  # 软依赖声明，仅用于提示
 }
 
 # 搜索结果取前几条喂给 LLM
@@ -54,38 +46,43 @@ def run(context: dict, config: dict) -> dict:
     if not query:
         return {"status": "error", "message": "查什么？说清楚点"}
 
-    # ── Step 1: 检查依赖 ─────────────────────────────────────
-    if not _check_deps():
-        install_hint = "pip install duckduckgo-search"
+    # ── 降级链 ───────────────────────────────────────────────
+    # ① 尝试 ddgs 搜索
+    results = []
+    if _check_ddgs():
+        results = _search_ddgs(query)
+
+    # ② ddgs 不可用或无结果 → GLM 联网搜索
+    if not results:
+        glm_answer = _search_glm(query, config)
+        if glm_answer:
+            return {
+                "status": "ok",
+                "message": glm_answer,
+                "query": query,
+                "source": "glm-web",
+            }
+
+    # ③ 兜底：给链接
+    if not results:
         search_url = f"https://duckduckgo.com/?q={query.replace(' ', '+')}"
+        hint = "ddgs 不可用" if not _check_ddgs() else "搜索无结果"
         return {
-            "status": "deps_missing",
-            "message": f"browse 模块需要先装依赖：{install_hint}，我先给你搜索链接：{search_url}",
+            "status": "no_results",
+            "message": f"{hint}，你可以自己看：{search_url}",
             "query": query,
-            "install": install_hint,
             "fallback_url": search_url,
         }
 
-    # ── Step 2: 搜索 ─────────────────────────────────────────
-    results = _search(query)
-
-    if not results:
-        search_url = f"https://duckduckgo.com/?q={query.replace(' ', '+')}"
-        return {
-            "status": "no_results",
-            "message": f"没搜到「{query}」的结果，你可以自己看：{search_url}",
-            "query": query,
-        }
-
-    # 打印完整结果到 console（调试用）
+    # 打印完整结果（调试用）
     print(f"\n[Browse] 搜索「{query}」，找到 {len(results)} 条：")
     for i, r in enumerate(results, 1):
         print(f"  {i}. {r['title']}")
         print(f"     {r['href']}")
         print(f"     {r['body'][:80]}...")
 
-    # ── Step 3: LLM 总结 → 语音播报 ─────────────────────────
-    message = _summarize(query, results[:_MAX_FOR_SUMMARY], config)
+    # ── LLM 总结 → 语音播报 ──────────────────────────────────
+    message = _summarize_with_llm(query, results[:_MAX_FOR_SUMMARY], config)
 
     return {
         "status": "ok",
@@ -93,55 +90,94 @@ def run(context: dict, config: dict) -> dict:
         "query": query,
         "results": results,
         "total": len(results),
+        "source": "ddgs",
     }
 
 
 # ── 依赖检测 ──────────────────────────────────────────────────
 
-def _check_deps() -> bool:
-    """软检测：duckduckgo_search 是否可用。"""
+def _check_ddgs() -> bool:
+    """软检测：ddgs 是否可用。"""
     try:
         import importlib
-        importlib.import_module("duckduckgo_search")
+        importlib.import_module("ddgs")
         return True
     except ImportError:
         return False
 
 
-# ── 搜索 ──────────────────────────────────────────────────────
+# ── 搜索（ddgs）──────────────────────────────────────────────
 
-def _search(query: str) -> list[dict]:
+def _search_ddgs(query: str) -> list[dict]:
     """
-    用 duckduckgo_search 搜索，返回结构化结果列表。
+    用 ddgs 搜索，返回结构化结果列表。
     每条结果：{title, href, body}
     """
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
 
         with DDGS() as ddgs:
             raw = list(ddgs.text(
                 query,
                 max_results=_MAX_RESULTS,
-                # region="cn-zh",  # 中文结果可选开启
             ))
 
-        results = []
-        for item in raw:
-            results.append({
-                "title": item.get("title", ""),
-                "href":  item.get("href", ""),
-                "body":  item.get("body", ""),
-            })
-        return results
-
+        return [
+            {"title": r.get("title", ""), "href": r.get("href", ""), "body": r.get("body", "")}
+            for r in raw
+        ]
     except Exception as e:
-        print(f"[Browse] Search error: {e}")
+        print(f"[Browse] ddgs search error: {e}")
         return []
 
 
-# ── LLM 总结 ──────────────────────────────────────────────────
+# ── 搜索（GLM 联网，降级 ②）────────────────────────────────
 
-def _summarize(query: str, results: list[dict], config: dict) -> str:
+def _search_glm(query: str, config: dict) -> Optional[str]:
+    """
+    用 GLM-4 联网搜索功能直接回答。
+    GLM 支持 web_search tool，不需要额外包。
+    失败时返回 None（继续降级）。
+    """
+    try:
+        from openai import OpenAI
+
+        cfg = config.get("intent", {})
+        api_key = cfg.get("api_key") or os.environ.get("ARIA_INTENT_KEY", "")
+        base_url = cfg.get("base_url", "https://open.bigmodel.cn/api/paas/v4")
+        model = cfg.get("model", "glm-4-flash")
+
+        if not api_key:
+            return None
+
+        client = OpenAI(api_key=api_key, base_url=base_url)
+
+        # GLM-4 联网搜索：传入 web_search tool
+        resp = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "你是 ARIA，简洁直接，不废话。回答控制在 1-2 句话。"},
+                {"role": "user", "content": f"帮我查一下：{query}"},
+            ],
+            tools=[{"type": "web_search", "web_search": {"search_query": query, "search_result": True}}],
+            max_tokens=150,
+            temperature=0.3,
+        )
+
+        answer = resp.choices[0].message.content
+        if answer and answer.strip():
+            print(f"[Browse] GLM web search answer: {answer[:80]}...")
+            return answer.strip()
+        return None
+
+    except Exception as e:
+        print(f"[Browse] GLM web search error: {e}")
+        return None
+
+
+# ── LLM 总结（ddgs 结果精炼）────────────────────────────────
+
+def _summarize_with_llm(query: str, results: list[dict], config: dict) -> str:
     """
     把搜索摘要列表用 LLM 浓缩成 1-2 句语音播报文本。
     失败时降级为直接返回第一条摘要。
@@ -162,10 +198,7 @@ def _summarize(query: str, results: list[dict], config: dict) -> str:
             kwargs["base_url"] = base_url
         client = OpenAI(**kwargs)
 
-        # 拼搜索摘要上下文
-        snippets = []
-        for r in results:
-            snippets.append(f"- {r['title']}\n  {r['body'][:120]}")
+        snippets = [f"- {r['title']}\n  {r['body'][:120]}" for r in results]
         context_text = "\n".join(snippets)
 
         prompt = (
@@ -189,7 +222,6 @@ def _summarize(query: str, results: list[dict], config: dict) -> str:
 
     except Exception as e:
         print(f"[Browse] Summarize fallback: {e}")
-        # 降级：直接用第一条摘要
         if results:
             first = results[0]
             return f"{first['title']}：{first['body'][:60]}"
@@ -212,6 +244,5 @@ def _extract_query(transcript: str) -> str:
         if t.lower().startswith(p.lower()):
             t = t[len(p):].lstrip("，。, ：: ")
             break
-    # 去掉语气词结尾
     t = re.sub(r"[吗呢啊嘛哦？?。！!]+$", "", t).strip()
     return t
